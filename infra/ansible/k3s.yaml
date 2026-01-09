@@ -34,6 +34,8 @@
           sh -s - server \
             --node-ip {{ private_ip }} \
             --advertise-address {{ private_ip }} \
+            --tls-san {{ private_ip }} \
+            --flannel-iface enp7s0 \
             --write-kubeconfig-mode 644
       args:
         executable: /bin/bash
@@ -65,12 +67,6 @@
         mode: "0600"
         content: "{{ kubeconfig_raw.content | b64decode }}"
 
-    - name: Taint control plane to keep app workloads on workers
-      shell: |
-        kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml taint nodes $(hostname) node-role.kubernetes.io/control-plane=true:NoSchedule --overwrite || true
-      args:
-        executable: /bin/bash
-
 - name: Install k3s workers
   hosts: workers
   become: true
@@ -85,7 +81,8 @@
           K3S_URL="https://{{ hostvars[groups['controlplane'][0]].private_ip }}:6443" \
           K3S_TOKEN="{{ hostvars[groups['controlplane'][0]].k3s_join_token }}" \
           sh -s - agent \
-            --node-ip {{ private_ip }}
+            --node-ip {{ private_ip }} \
+            --flannel-iface enp7s0 \
       args:
         executable: /bin/bash
         creates: /usr/local/bin/k3s-agent
