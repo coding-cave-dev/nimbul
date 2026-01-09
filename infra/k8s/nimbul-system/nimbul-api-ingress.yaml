@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nimbul-api
+  namespace: nimbul-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - api.nimbul.codingcave.io
+      secretName: nimbul-api-tls
+  rules:
+    - host: api.nimbul.codingcave.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nimbul-api
+                port:
+                  number: 80
