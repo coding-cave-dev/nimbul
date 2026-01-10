@@ -1,4 +1,4 @@
-module github.com/nimbul
+module github.com/coding-cave-dev/nimbul
 
 go 1.25.5
 

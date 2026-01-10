@@ -1,10 +1,20 @@
 package main
 
 import (
-	"github.com/nimbul/internal/httpserver"
+	"os"
+
+	"github.com/coding-cave-dev/nimbul/internal/httpserver"
 )
 
 func main() {
 	router := httpserver.NewRouter()
-	router.Listen(":8080")
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	if err := router.Listen(":" + port); err != nil {
+		panic(err)
+	}
 }

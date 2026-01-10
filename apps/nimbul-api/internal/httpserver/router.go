@@ -21,7 +21,7 @@ func NewRouter() *fiber.App {
 
 	huma.Get(api, "/health", func(ctx context.Context, input *struct{}) (*HealthCheckResponse, error) {
 		resp := &HealthCheckResponse{}
-		resp.Body.Message = "OK"
+		resp.Body.Message = "Nimbul API is up and running"
 		return resp, nil
 	})
 
