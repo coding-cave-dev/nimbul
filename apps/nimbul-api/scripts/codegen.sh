@@ -1,0 +1,1 @@
+oapi-codegen -generate "types,client" -package sdk openapi.yaml > internal/sdk/root.go

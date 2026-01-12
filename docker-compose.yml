@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nimbul-postgres
+    environment:
+      POSTGRES_DB: nimbul
+      POSTGRES_USER: nimbul
+      POSTGRES_PASSWORD: nimbul
+    ports:
+      - "5332:5432"
+    volumes:
+      - nimbul-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  nimbul-postgres-data:
