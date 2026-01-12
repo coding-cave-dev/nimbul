@@ -9,30 +9,30 @@ import (
 	"context"
 )
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-  id, email, password_hash
-) VALUES (
-  $1, $2, $3
-)
-RETURNING id, email, password_hash, created_at, updated_at
+const getCredentialByOwnerIDAndTokenType = `-- name: GetCredentialByOwnerIDAndTokenType :one
+SELECT id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at FROM credentials
+WHERE owner_id = $1 AND token_type = $2 LIMIT 1
 `
 
-type CreateUserParams struct {
-	ID           string
-	Email        string
-	PasswordHash string
+type GetCredentialByOwnerIDAndTokenTypeParams struct {
+	OwnerID   string
+	TokenType string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.ID, arg.Email, arg.PasswordHash)
-	var i User
+func (q *Queries) GetCredentialByOwnerIDAndTokenType(ctx context.Context, arg GetCredentialByOwnerIDAndTokenTypeParams) (Credential, error) {
+	row := q.db.QueryRow(ctx, getCredentialByOwnerIDAndTokenType, arg.OwnerID, arg.TokenType)
+	var i Credential
 	err := row.Scan(
 		&i.ID,
-		&i.Email,
-		&i.PasswordHash,
+		&i.OwnerID,
+		&i.Provider,
+		&i.TokenType,
+		&i.Ciphertext,
+		&i.TokenNonce,
+		&i.WrappedDek,
+		&i.DekNonce,
 		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }

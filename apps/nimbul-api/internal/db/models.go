@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Credential struct {
+	ID         int64
+	OwnerID    string
+	Provider   string
+	TokenType  string
+	Ciphertext []byte
+	TokenNonce []byte
+	WrappedDek []byte
+	DekNonce   []byte
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+}
+
 type User struct {
 	ID           string
 	Email        string

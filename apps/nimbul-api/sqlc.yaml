@@ -1,7 +1,11 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "internal/db/query.sql"
+    queries: 
+      - "internal/db/sql/users/query.sql"
+      - "internal/db/sql/users/mutations.sql"
+      - "internal/db/sql/credentials/query.sql"
+      - "internal/db/sql/credentials/mutations.sql"
     schema: "internal/db/migrations"
     gen:
       go:

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coding-cave-dev/nimbul/internal/sdk"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -23,6 +24,9 @@ type tokenResponse struct {
 }
 
 type connectModal struct {
+	email            string
+	userID           string
+	authToken        string
 	providers        []string
 	selectedProvider string
 	providerCursor   int
@@ -32,6 +36,7 @@ type connectGithubModal struct {
 	deviceAuthResponse deviceAuthResponse
 	isPolling          bool
 	hasToken           bool
+	token              oauth2.Token
 }
 
 func (m connectGithubModal) Init() tea.Cmd {
@@ -82,6 +87,9 @@ func (m connectGithubModal) pollForToken() tea.Msg {
 func (m connectGithubModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.hasToken {
+			return m, tea.Quit
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -99,6 +107,7 @@ func (m connectGithubModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tokenResponse:
 		m.isPolling = false
 		m.hasToken = true
+		m.token = msg.Token
 		return m, nil
 	}
 
@@ -114,6 +123,14 @@ func (m connectGithubModal) View() string {
 
 	if m.hasToken {
 		s.WriteString("Token received, you can close this window and continue with the setup")
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Token: %s", m.token.AccessToken))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Refresh Token: %s", m.token.RefreshToken))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Expiry: %s", m.token.Expiry))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("Token Type: %s", m.token.TokenType))
 	}
 
 	return s.String()
@@ -176,10 +193,58 @@ func init() {
 }
 
 func connectExec(cmd *cobra.Command, args []string) error {
+	token, err := loadToken()
+	if err != nil {
+		return fmt.Errorf("failed to load token: %w", err)
+	}
+
+	if token == "" {
+		return fmt.Errorf("not logged in. Please run 'nimbul login' first")
+	}
+
+	// Get SDK client
+	client, err := getSDKClient()
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	ctx := context.Background()
+	authHeader := fmt.Sprintf("Bearer %s", token)
+	params := &sdk.GetMeParams{
+		Authorization: &authHeader,
+	}
+
+	resp, err := client.GetMeWithResponse(ctx, params)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		if resp.ApplicationproblemJSONDefault != nil {
+			detail := ""
+			if resp.ApplicationproblemJSONDefault.Detail != nil {
+				detail = *resp.ApplicationproblemJSONDefault.Detail
+			} else if resp.ApplicationproblemJSONDefault.Title != nil {
+				detail = *resp.ApplicationproblemJSONDefault.Title
+			}
+			if detail != "" {
+				return fmt.Errorf("%s", detail)
+			}
+		}
+		return fmt.Errorf("request failed with status %d", resp.StatusCode())
+	}
+
+	if resp.JSON200 == nil {
+		return fmt.Errorf("empty response body")
+	}
+
 	p := tea.NewProgram(connectModal{
 		providers:        []string{"GitHub"},
 		selectedProvider: "",
 		providerCursor:   0,
+		userID:           resp.JSON200.Id,
+		authToken:        token,
+		email:            resp.JSON200.Email,
 	})
 	if _, err := p.Run(); err != nil {
 		return err
