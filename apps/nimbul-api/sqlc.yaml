@@ -6,6 +6,8 @@ sql:
       - "internal/db/sql/users/mutations.sql"
       - "internal/db/sql/credentials/query.sql"
       - "internal/db/sql/credentials/mutations.sql"
+      - "internal/db/sql/configs/query.sql"
+      - "internal/db/sql/configs/mutations.sql"
     schema: "internal/db/migrations"
     gen:
       go:

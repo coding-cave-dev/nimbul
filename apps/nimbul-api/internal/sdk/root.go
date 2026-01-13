@@ -17,6 +17,26 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// CreateConfigRequestBody defines model for CreateConfigRequestBody.
+type CreateConfigRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string `json:"$schema,omitempty"`
+	DockerfilePath string  `json:"dockerfile_path"`
+	Provider       string  `json:"provider"`
+	RepoCloneUrl   string  `json:"repo_clone_url"`
+	RepoFullName   string  `json:"repo_full_name"`
+	RepoName       string  `json:"repo_name"`
+	RepoOwner      string  `json:"repo_owner"`
+	WebhookSecret  string  `json:"webhook_secret"`
+}
+
+// CreateConfigResponseBody defines model for CreateConfigResponseBody.
+type CreateConfigResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	ConfigId string  `json:"config_id"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	// Location Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
@@ -51,6 +71,20 @@ type ErrorModel struct {
 
 	// Type A URI reference to human-readable documentation for the error.
 	Type *string `json:"type,omitempty"`
+}
+
+// GetGitHubTokenResponseBody defines model for GetGitHubTokenResponseBody.
+type GetGitHubTokenResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Token  string  `json:"token"`
+}
+
+// GetProvidersResponseBody defines model for GetProvidersResponseBody.
+type GetProvidersResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	Providers *[]string `json:"providers"`
 }
 
 // HealthCheckResponseBody defines model for HealthCheckResponseBody.
@@ -109,6 +143,20 @@ type StoreCredentialResponseBody struct {
 	CredentialId int64   `json:"credential_id"`
 }
 
+// UpdateConfigWebhookRequestBody defines model for UpdateConfigWebhookRequestBody.
+type UpdateConfigWebhookRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	WebhookId int64   `json:"webhook_id"`
+}
+
+// UpdateConfigWebhookResponseBody defines model for UpdateConfigWebhookResponseBody.
+type UpdateConfigWebhookResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Success bool    `json:"success"`
+}
+
 // UserResponse defines model for UserResponse.
 type UserResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -117,8 +165,23 @@ type UserResponse struct {
 	Id     string  `json:"id"`
 }
 
+// PostConfigsParams defines parameters for PostConfigs.
+type PostConfigsParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
+// PatchConfigsByIdWebhookParams defines parameters for PatchConfigsByIdWebhook.
+type PatchConfigsByIdWebhookParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
 // PostCredentialsParams defines parameters for PostCredentials.
 type PostCredentialsParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
+// GetCredentialsGithubTokenParams defines parameters for GetCredentialsGithubToken.
+type GetCredentialsGithubTokenParams struct {
 	Authorization *string `json:"Authorization,omitempty"`
 }
 
@@ -126,6 +189,17 @@ type PostCredentialsParams struct {
 type GetMeParams struct {
 	Authorization *string `json:"Authorization,omitempty"`
 }
+
+// GetProvidersParams defines parameters for GetProviders.
+type GetProvidersParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
+// PostConfigsJSONRequestBody defines body for PostConfigs for application/json ContentType.
+type PostConfigsJSONRequestBody = CreateConfigRequestBody
+
+// PatchConfigsByIdWebhookJSONRequestBody defines body for PatchConfigsByIdWebhook for application/json ContentType.
+type PatchConfigsByIdWebhookJSONRequestBody = UpdateConfigWebhookRequestBody
 
 // PostCredentialsJSONRequestBody defines body for PostCredentials for application/json ContentType.
 type PostCredentialsJSONRequestBody = StoreCredentialRequestBody
@@ -209,10 +283,23 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// PostConfigsWithBody request with any body
+	PostConfigsWithBody(ctx context.Context, params *PostConfigsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostConfigs(ctx context.Context, params *PostConfigsParams, body PostConfigsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchConfigsByIdWebhookWithBody request with any body
+	PatchConfigsByIdWebhookWithBody(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PatchConfigsByIdWebhook(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, body PatchConfigsByIdWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostCredentialsWithBody request with any body
 	PostCredentialsWithBody(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostCredentials(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCredentialsGithubToken request
+	GetCredentialsGithubToken(ctx context.Context, params *GetCredentialsGithubTokenParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetHealth request
 	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -225,10 +312,64 @@ type ClientInterface interface {
 	// GetMe request
 	GetMe(ctx context.Context, params *GetMeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProviders request
+	GetProviders(ctx context.Context, params *GetProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostRegisterWithBody request with any body
 	PostRegisterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostRegister(ctx context.Context, body PostRegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWebhooksGithubById request
+	PostWebhooksGithubById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) PostConfigsWithBody(ctx context.Context, params *PostConfigsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigsRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostConfigs(ctx context.Context, params *PostConfigsParams, body PostConfigsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigsRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchConfigsByIdWebhookWithBody(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchConfigsByIdWebhookRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PatchConfigsByIdWebhook(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, body PatchConfigsByIdWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchConfigsByIdWebhookRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) PostCredentialsWithBody(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -245,6 +386,18 @@ func (c *Client) PostCredentialsWithBody(ctx context.Context, params *PostCreden
 
 func (c *Client) PostCredentials(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostCredentialsRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCredentialsGithubToken(ctx context.Context, params *GetCredentialsGithubTokenParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCredentialsGithubTokenRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +456,18 @@ func (c *Client) GetMe(ctx context.Context, params *GetMeParams, reqEditors ...R
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetProviders(ctx context.Context, params *GetProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProvidersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) PostRegisterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostRegisterRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -325,6 +490,135 @@ func (c *Client) PostRegister(ctx context.Context, body PostRegisterJSONRequestB
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+func (c *Client) PostWebhooksGithubById(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWebhooksGithubByIdRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewPostConfigsRequest calls the generic PostConfigs builder with application/json body
+func NewPostConfigsRequest(server string, params *PostConfigsParams, body PostConfigsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigsRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewPostConfigsRequestWithBody generates requests for PostConfigs with any type of body
+func NewPostConfigsRequestWithBody(server string, params *PostConfigsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/configs")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "Authorization", runtime.ParamLocationHeader, *params.Authorization)
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewPatchConfigsByIdWebhookRequest calls the generic PatchConfigsByIdWebhook builder with application/json body
+func NewPatchConfigsByIdWebhookRequest(server string, id string, params *PatchConfigsByIdWebhookParams, body PatchConfigsByIdWebhookJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchConfigsByIdWebhookRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewPatchConfigsByIdWebhookRequestWithBody generates requests for PatchConfigsByIdWebhook with any type of body
+func NewPatchConfigsByIdWebhookRequestWithBody(server string, id string, params *PatchConfigsByIdWebhookParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/configs/%s/webhook", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "Authorization", runtime.ParamLocationHeader, *params.Authorization)
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
 }
 
 // NewPostCredentialsRequest calls the generic PostCredentials builder with application/json body
@@ -363,6 +657,48 @@ func NewPostCredentialsRequestWithBody(server string, params *PostCredentialsPar
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "Authorization", runtime.ParamLocationHeader, *params.Authorization)
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetCredentialsGithubTokenRequest generates requests for GetCredentialsGithubToken
+func NewGetCredentialsGithubTokenRequest(server string, params *GetCredentialsGithubTokenParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/credentials/github/token")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	if params != nil {
 
@@ -491,6 +827,48 @@ func NewGetMeRequest(server string, params *GetMeParams) (*http.Request, error) 
 	return req, nil
 }
 
+// NewGetProvidersRequest generates requests for GetProviders
+func NewGetProvidersRequest(server string, params *GetProvidersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/providers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "Authorization", runtime.ParamLocationHeader, *params.Authorization)
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewPostRegisterRequest calls the generic PostRegister builder with application/json body
 func NewPostRegisterRequest(server string, body PostRegisterJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -527,6 +905,40 @@ func NewPostRegisterRequestWithBody(server string, contentType string, body io.R
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostWebhooksGithubByIdRequest generates requests for PostWebhooksGithubById
+func NewPostWebhooksGithubByIdRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/webhooks/github/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -574,10 +986,23 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// PostConfigsWithBodyWithResponse request with any body
+	PostConfigsWithBodyWithResponse(ctx context.Context, params *PostConfigsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigsResponse, error)
+
+	PostConfigsWithResponse(ctx context.Context, params *PostConfigsParams, body PostConfigsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigsResponse, error)
+
+	// PatchConfigsByIdWebhookWithBodyWithResponse request with any body
+	PatchConfigsByIdWebhookWithBodyWithResponse(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchConfigsByIdWebhookResponse, error)
+
+	PatchConfigsByIdWebhookWithResponse(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, body PatchConfigsByIdWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConfigsByIdWebhookResponse, error)
+
 	// PostCredentialsWithBodyWithResponse request with any body
 	PostCredentialsWithBodyWithResponse(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error)
 
 	PostCredentialsWithResponse(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error)
+
+	// GetCredentialsGithubTokenWithResponse request
+	GetCredentialsGithubTokenWithResponse(ctx context.Context, params *GetCredentialsGithubTokenParams, reqEditors ...RequestEditorFn) (*GetCredentialsGithubTokenResponse, error)
 
 	// GetHealthWithResponse request
 	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
@@ -590,10 +1015,62 @@ type ClientWithResponsesInterface interface {
 	// GetMeWithResponse request
 	GetMeWithResponse(ctx context.Context, params *GetMeParams, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
 
+	// GetProvidersWithResponse request
+	GetProvidersWithResponse(ctx context.Context, params *GetProvidersParams, reqEditors ...RequestEditorFn) (*GetProvidersResponse, error)
+
 	// PostRegisterWithBodyWithResponse request with any body
 	PostRegisterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostRegisterResponse, error)
 
 	PostRegisterWithResponse(ctx context.Context, body PostRegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*PostRegisterResponse, error)
+
+	// PostWebhooksGithubByIdWithResponse request
+	PostWebhooksGithubByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PostWebhooksGithubByIdResponse, error)
+}
+
+type PostConfigsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *CreateConfigResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PatchConfigsByIdWebhookResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *UpdateConfigWebhookResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchConfigsByIdWebhookResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchConfigsByIdWebhookResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type PostCredentialsResponse struct {
@@ -613,6 +1090,29 @@ func (r PostCredentialsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r PostCredentialsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetCredentialsGithubTokenResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GetGitHubTokenResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCredentialsGithubTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCredentialsGithubTokenResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -688,6 +1188,29 @@ func (r GetMeResponse) StatusCode() int {
 	return 0
 }
 
+type GetProvidersResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GetProvidersResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostRegisterResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -711,6 +1234,62 @@ func (r PostRegisterResponse) StatusCode() int {
 	return 0
 }
 
+type PostWebhooksGithubByIdResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWebhooksGithubByIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWebhooksGithubByIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// PostConfigsWithBodyWithResponse request with arbitrary body returning *PostConfigsResponse
+func (c *ClientWithResponses) PostConfigsWithBodyWithResponse(ctx context.Context, params *PostConfigsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigsResponse, error) {
+	rsp, err := c.PostConfigsWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigsResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostConfigsWithResponse(ctx context.Context, params *PostConfigsParams, body PostConfigsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigsResponse, error) {
+	rsp, err := c.PostConfigs(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigsResponse(rsp)
+}
+
+// PatchConfigsByIdWebhookWithBodyWithResponse request with arbitrary body returning *PatchConfigsByIdWebhookResponse
+func (c *ClientWithResponses) PatchConfigsByIdWebhookWithBodyWithResponse(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchConfigsByIdWebhookResponse, error) {
+	rsp, err := c.PatchConfigsByIdWebhookWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchConfigsByIdWebhookResponse(rsp)
+}
+
+func (c *ClientWithResponses) PatchConfigsByIdWebhookWithResponse(ctx context.Context, id string, params *PatchConfigsByIdWebhookParams, body PatchConfigsByIdWebhookJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConfigsByIdWebhookResponse, error) {
+	rsp, err := c.PatchConfigsByIdWebhook(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchConfigsByIdWebhookResponse(rsp)
+}
+
 // PostCredentialsWithBodyWithResponse request with arbitrary body returning *PostCredentialsResponse
 func (c *ClientWithResponses) PostCredentialsWithBodyWithResponse(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error) {
 	rsp, err := c.PostCredentialsWithBody(ctx, params, contentType, body, reqEditors...)
@@ -726,6 +1305,15 @@ func (c *ClientWithResponses) PostCredentialsWithResponse(ctx context.Context, p
 		return nil, err
 	}
 	return ParsePostCredentialsResponse(rsp)
+}
+
+// GetCredentialsGithubTokenWithResponse request returning *GetCredentialsGithubTokenResponse
+func (c *ClientWithResponses) GetCredentialsGithubTokenWithResponse(ctx context.Context, params *GetCredentialsGithubTokenParams, reqEditors ...RequestEditorFn) (*GetCredentialsGithubTokenResponse, error) {
+	rsp, err := c.GetCredentialsGithubToken(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCredentialsGithubTokenResponse(rsp)
 }
 
 // GetHealthWithResponse request returning *GetHealthResponse
@@ -763,6 +1351,15 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, params *Get
 	return ParseGetMeResponse(rsp)
 }
 
+// GetProvidersWithResponse request returning *GetProvidersResponse
+func (c *ClientWithResponses) GetProvidersWithResponse(ctx context.Context, params *GetProvidersParams, reqEditors ...RequestEditorFn) (*GetProvidersResponse, error) {
+	rsp, err := c.GetProviders(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProvidersResponse(rsp)
+}
+
 // PostRegisterWithBodyWithResponse request with arbitrary body returning *PostRegisterResponse
 func (c *ClientWithResponses) PostRegisterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostRegisterResponse, error) {
 	rsp, err := c.PostRegisterWithBody(ctx, contentType, body, reqEditors...)
@@ -778,6 +1375,81 @@ func (c *ClientWithResponses) PostRegisterWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParsePostRegisterResponse(rsp)
+}
+
+// PostWebhooksGithubByIdWithResponse request returning *PostWebhooksGithubByIdResponse
+func (c *ClientWithResponses) PostWebhooksGithubByIdWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*PostWebhooksGithubByIdResponse, error) {
+	rsp, err := c.PostWebhooksGithubById(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWebhooksGithubByIdResponse(rsp)
+}
+
+// ParsePostConfigsResponse parses an HTTP response from a PostConfigsWithResponse call
+func ParsePostConfigsResponse(rsp *http.Response) (*PostConfigsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CreateConfigResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePatchConfigsByIdWebhookResponse parses an HTTP response from a PatchConfigsByIdWebhookWithResponse call
+func ParsePatchConfigsByIdWebhookResponse(rsp *http.Response) (*PatchConfigsByIdWebhookResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchConfigsByIdWebhookResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UpdateConfigWebhookResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParsePostCredentialsResponse parses an HTTP response from a PostCredentialsWithResponse call
@@ -796,6 +1468,39 @@ func ParsePostCredentialsResponse(rsp *http.Response) (*PostCredentialsResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest StoreCredentialResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCredentialsGithubTokenResponse parses an HTTP response from a GetCredentialsGithubTokenWithResponse call
+func ParseGetCredentialsGithubTokenResponse(rsp *http.Response) (*GetCredentialsGithubTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCredentialsGithubTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetGitHubTokenResponseBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -912,6 +1617,39 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	return response, nil
 }
 
+// ParseGetProvidersResponse parses an HTTP response from a GetProvidersWithResponse call
+func ParseGetProvidersResponse(rsp *http.Response) (*GetProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetProvidersResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParsePostRegisterResponse parses an HTTP response from a PostRegisterWithResponse call
 func ParsePostRegisterResponse(rsp *http.Response) (*PostRegisterResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -933,6 +1671,32 @@ func ParsePostRegisterResponse(rsp *http.Response) (*PostRegisterResponse, error
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostWebhooksGithubByIdResponse parses an HTTP response from a PostWebhooksGithubByIdWithResponse call
+func ParsePostWebhooksGithubByIdResponse(rsp *http.Response) (*PostWebhooksGithubByIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWebhooksGithubByIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

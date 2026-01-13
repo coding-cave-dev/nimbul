@@ -7,7 +7,128 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const getConfigByID = `-- name: GetConfigByID :one
+SELECT id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at FROM repo_configs
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetConfigByID(ctx context.Context, id string) (RepoConfig, error) {
+	row := q.db.QueryRow(ctx, getConfigByID, id)
+	var i RepoConfig
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.RepoFullName,
+		&i.RepoCloneUrl,
+		&i.DockerfilePath,
+		&i.WebhookSecret,
+		&i.WebhookID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConfigByOwnerIDAndRepoFullName = `-- name: GetConfigByOwnerIDAndRepoFullName :one
+SELECT id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at FROM repo_configs
+WHERE owner_id = $1 AND repo_full_name = $2 LIMIT 1
+`
+
+type GetConfigByOwnerIDAndRepoFullNameParams struct {
+	OwnerID      string
+	RepoFullName string
+}
+
+func (q *Queries) GetConfigByOwnerIDAndRepoFullName(ctx context.Context, arg GetConfigByOwnerIDAndRepoFullNameParams) (RepoConfig, error) {
+	row := q.db.QueryRow(ctx, getConfigByOwnerIDAndRepoFullName, arg.OwnerID, arg.RepoFullName)
+	var i RepoConfig
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.RepoFullName,
+		&i.RepoCloneUrl,
+		&i.DockerfilePath,
+		&i.WebhookSecret,
+		&i.WebhookID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConfigByWebhookID = `-- name: GetConfigByWebhookID :one
+SELECT id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at FROM repo_configs
+WHERE webhook_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetConfigByWebhookID(ctx context.Context, webhookID pgtype.Int8) (RepoConfig, error) {
+	row := q.db.QueryRow(ctx, getConfigByWebhookID, webhookID)
+	var i RepoConfig
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.RepoFullName,
+		&i.RepoCloneUrl,
+		&i.DockerfilePath,
+		&i.WebhookSecret,
+		&i.WebhookID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getConfigsByOwnerID = `-- name: GetConfigsByOwnerID :many
+SELECT id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at FROM repo_configs
+WHERE owner_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) GetConfigsByOwnerID(ctx context.Context, ownerID string) ([]RepoConfig, error) {
+	rows, err := q.db.Query(ctx, getConfigsByOwnerID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RepoConfig
+	for rows.Next() {
+		var i RepoConfig
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Provider,
+			&i.RepoOwner,
+			&i.RepoName,
+			&i.RepoFullName,
+			&i.RepoCloneUrl,
+			&i.DockerfilePath,
+			&i.WebhookSecret,
+			&i.WebhookID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const getCredentialByOwnerIDAndTokenType = `-- name: GetCredentialByOwnerIDAndTokenType :one
 SELECT id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at, expires_at FROM credentials
@@ -36,6 +157,31 @@ func (q *Queries) GetCredentialByOwnerIDAndTokenType(ctx context.Context, arg Ge
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const getUniqueProvidersByOwnerID = `-- name: GetUniqueProvidersByOwnerID :many
+SELECT DISTINCT provider FROM credentials 
+WHERE owner_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
+`
+
+func (q *Queries) GetUniqueProvidersByOwnerID(ctx context.Context, ownerID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUniqueProvidersByOwnerID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var provider string
+		if err := rows.Scan(&provider); err != nil {
+			return nil, err
+		}
+		items = append(items, provider)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one

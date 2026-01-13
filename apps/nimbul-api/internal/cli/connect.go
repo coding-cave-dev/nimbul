@@ -9,9 +9,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coding-cave-dev/nimbul/internal/sdk"
+	"github.com/google/go-github/v81/github"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
+	oauth2github "golang.org/x/oauth2/github"
 )
 
 type deviceAuthResponse struct {
@@ -22,6 +23,29 @@ type deviceAuthResponse struct {
 
 type tokenResponse struct {
 	Token oauth2.Token
+}
+
+type githubTestResultMsg struct {
+	repos []string
+	err   error
+}
+
+type appInstallationCheckMsg struct {
+	installed      bool
+	installURL     string
+	installationID int64
+	err            error
+}
+
+type appInstallationVerifiedMsg struct {
+	installed      bool
+	installationID int64
+	err            error
+}
+
+type appInstallationAuthTestMsg struct {
+	success bool
+	err     error
 }
 
 // saveTokensToAPI saves both access and refresh tokens to the credentials endpoint
@@ -113,15 +137,28 @@ type connectModal struct {
 }
 
 type connectGithubModal struct {
-	deviceAuthResponse deviceAuthResponse
-	isPolling          bool
-	hasToken           bool
-	token              oauth2.Token
-	authToken          string
-	userID             string
-	client             *sdk.ClientWithResponses
-	tokensSaved        bool
-	saveError          error
+	deviceAuthResponse   deviceAuthResponse
+	isPolling            bool
+	hasToken             bool
+	token                oauth2.Token
+	authToken            string
+	userID               string
+	client               *sdk.ClientWithResponses
+	tokensSaved          bool
+	saveError            error
+	testInProgress       bool
+	testRepos            []string
+	testError            error
+	checkingInstallation bool
+	appInstalled         bool
+	appInstallURL        string
+	appInstallError      error
+	waitingForInstall    bool
+	verifyingInstall     bool
+	installationID       int64
+	testingInstallAuth   bool
+	installAuthSuccess   bool
+	installAuthError     error
 }
 
 func (m connectGithubModal) Init() tea.Cmd {
@@ -136,10 +173,11 @@ func (m connectGithubModal) startOauthFlow() tea.Msg {
 
 	config := &oauth2.Config{
 		ClientID: clientID,
+		Scopes:   []string{"admin:repo_hook", "repo"},
 		Endpoint: oauth2.Endpoint{
-			AuthURL: github.Endpoint.AuthURL,
-			TokenURL: github.Endpoint.
-				TokenURL, DeviceAuthURL: github.Endpoint.DeviceAuthURL,
+			AuthURL:       oauth2github.Endpoint.AuthURL,
+			TokenURL:      oauth2github.Endpoint.TokenURL,
+			DeviceAuthURL: oauth2github.Endpoint.DeviceAuthURL,
 		},
 	}
 	ctx := context.Background()
@@ -160,6 +198,7 @@ func (m connectGithubModal) startOauthFlow() tea.Msg {
 }
 
 func (m connectGithubModal) pollForToken() tea.Msg {
+	fmt.Printf("polling for token with scopes: %v\n", m.deviceAuthResponse.config.Scopes)
 	token, err := m.deviceAuthResponse.config.DeviceAccessToken(m.deviceAuthResponse.ctx, m.deviceAuthResponse.Device)
 	if err != nil {
 		fmt.Printf("error exchanging device code: %v\n", err)
@@ -169,10 +208,159 @@ func (m connectGithubModal) pollForToken() tea.Msg {
 	return tokenResponse{Token: *token}
 }
 
+func (m connectGithubModal) testGitHubAPI() tea.Msg {
+	ctx := context.Background()
+	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+
+	repos, _, err := ghClient.Repositories.ListByAuthenticatedUser(ctx, &github.RepositoryListByAuthenticatedUserOptions{
+		Type:        "all",
+		Sort:        "updated",
+		Direction:   "desc",
+		ListOptions: github.ListOptions{PerPage: 5}, // Just test with first 5 repos
+	})
+	if err != nil {
+		return githubTestResultMsg{err: fmt.Errorf("failed to list repos: %w", err)}
+	}
+
+	repoNames := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		repoNames = append(repoNames, repo.GetFullName())
+	}
+
+	return githubTestResultMsg{repos: repoNames}
+}
+
+func (m connectGithubModal) checkAppInstallation() tea.Msg {
+	ctx := context.Background()
+	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+
+	// Get user's app installations
+	installations, _, err := ghClient.Apps.ListUserInstallations(ctx, nil)
+	if err != nil {
+		return appInstallationCheckMsg{
+			installed: false,
+			err:       fmt.Errorf("failed to check app installations: %w", err),
+		}
+	}
+
+	// Check if nimbul-coding-cave app is installed
+	appSlug := "nimbul-coding-cave"
+	installed := false
+	var installationID int64
+	installURL := fmt.Sprintf("https://github.com/apps/%s/installations/new", appSlug)
+
+	for _, installation := range installations {
+		if installation.GetAppSlug() == appSlug {
+			installed = true
+			installationID = installation.GetID()
+			break
+		}
+	}
+
+	return appInstallationCheckMsg{
+		installed:      installed,
+		installURL:     installURL,
+		installationID: installationID,
+	}
+}
+
+func (m connectGithubModal) verifyAppInstallation() tea.Msg {
+	ctx := context.Background()
+	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+
+	// Get user's app installations again
+	installations, _, err := ghClient.Apps.ListUserInstallations(ctx, nil)
+	if err != nil {
+		return appInstallationVerifiedMsg{
+			installed: false,
+			err:       fmt.Errorf("failed to verify app installation: %w", err),
+		}
+	}
+
+	// Check if nimbul-coding-cave app is installed
+	appSlug := "nimbul-coding-cave"
+	installed := false
+	var installationID int64
+
+	for _, installation := range installations {
+		if installation.GetAppSlug() == appSlug {
+			installed = true
+			installationID = installation.GetID()
+			break
+		}
+	}
+
+	return appInstallationVerifiedMsg{
+		installed:      installed,
+		installationID: installationID,
+	}
+}
+
+func (m connectGithubModal) testAppInstallationAuth() tea.Msg {
+	ctx := context.Background()
+
+	// Use shared GitHub app auth utility
+	appAuth, err := NewGitHubAppAuth(m.installationID)
+	if err != nil {
+		return appInstallationAuthTestMsg{
+			success: false,
+			err:     err,
+		}
+	}
+
+	// Get installation client
+	installClient, err := appAuth.GetInstallationClient(ctx)
+	if err != nil {
+		return appInstallationAuthTestMsg{
+			success: false,
+			err:     err,
+		}
+	}
+
+	// Get user's repos to find one to test webhooks on (using user token)
+	userClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+	repos, _, err := userClient.Repositories.ListByAuthenticatedUser(ctx, &github.RepositoryListByAuthenticatedUserOptions{
+		ListOptions: github.ListOptions{PerPage: 1},
+	})
+	if err != nil {
+		return appInstallationAuthTestMsg{
+			success: false,
+			err:     fmt.Errorf("failed to list repos for testing: %w", err),
+		}
+	}
+
+	if len(repos) == 0 {
+		return appInstallationAuthTestMsg{
+			success: false,
+			err:     fmt.Errorf("no repositories found to test webhooks"),
+		}
+	}
+
+	// Try to list webhooks using installation auth
+	testRepo := repos[0]
+	_, _, err = installClient.Repositories.ListHooks(ctx, testRepo.GetOwner().GetLogin(), testRepo.GetName(), nil)
+	if err != nil {
+		return appInstallationAuthTestMsg{
+			success: false,
+			err:     fmt.Errorf("failed to list webhooks with installation auth: %w", err),
+		}
+	}
+
+	return appInstallationAuthTestMsg{
+		success: true,
+	}
+}
+
 func (m connectGithubModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.hasToken {
+			// If waiting for installation, any key press triggers verification
+			if m.waitingForInstall {
+				m.waitingForInstall = false
+				m.verifyingInstall = true
+				return m, m.verifyAppInstallation
+			}
 			return m, tea.Quit
 		}
 		switch msg.Type {
@@ -203,9 +391,69 @@ func (m connectGithubModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				fmt.Printf("Warning: Failed to save tokens to API: %v\n", err)
 			} else {
 				m.tokensSaved = true
+				// Test GitHub API connection after saving tokens
+				m.testInProgress = true
+				return m, m.testGitHubAPI
 			}
 		}
 
+		return m, nil
+
+	case githubTestResultMsg:
+		m.testInProgress = false
+		if msg.err != nil {
+			m.testError = msg.err
+		} else {
+			m.testRepos = msg.repos
+			// After successful API test, check app installation
+			m.checkingInstallation = true
+			return m, m.checkAppInstallation
+		}
+		return m, nil
+
+	case appInstallationCheckMsg:
+		m.checkingInstallation = false
+		if msg.err != nil {
+			m.appInstallError = msg.err
+		} else {
+			m.appInstalled = msg.installed
+			m.installationID = msg.installationID
+			if !msg.installed {
+				m.appInstallURL = msg.installURL
+				m.waitingForInstall = true
+			} else {
+				// App is installed, test installation auth
+				m.testingInstallAuth = true
+				return m, m.testAppInstallationAuth
+			}
+		}
+		return m, nil
+
+	case appInstallationVerifiedMsg:
+		m.verifyingInstall = false
+		if msg.err != nil {
+			m.appInstallError = msg.err
+			m.waitingForInstall = true // Allow retry
+		} else {
+			m.appInstalled = msg.installed
+			m.installationID = msg.installationID
+			if !msg.installed {
+				m.waitingForInstall = true // Still waiting
+			} else {
+				// App is now installed, test installation auth
+				m.testingInstallAuth = true
+				return m, m.testAppInstallationAuth
+			}
+		}
+		return m, nil
+
+	case appInstallationAuthTestMsg:
+		m.testingInstallAuth = false
+		if msg.err != nil {
+			m.installAuthError = msg.err
+		} else {
+			m.installAuthSuccess = msg.success
+		}
 		return m, nil
 	}
 
@@ -220,20 +468,62 @@ func (m connectGithubModal) View() string {
 	}
 
 	if m.hasToken {
-		s.WriteString("Token received, you can close this window and continue with the setup")
-		s.WriteString("\n")
+		s.WriteString("Token received\n")
 		if m.tokensSaved {
 			s.WriteString("✓ Tokens saved successfully\n")
 		} else if m.saveError != nil {
 			s.WriteString(fmt.Sprintf("⚠ Warning: Failed to save tokens: %v\n", m.saveError))
 		}
-		s.WriteString(fmt.Sprintf("Token: %s", m.token.AccessToken))
-		s.WriteString("\n")
-		s.WriteString(fmt.Sprintf("Refresh Token: %s", m.token.RefreshToken))
-		s.WriteString("\n")
-		s.WriteString(fmt.Sprintf("Expiry: %s", m.token.Expiry))
-		s.WriteString("\n")
-		s.WriteString(fmt.Sprintf("Token Type: %s", m.token.TokenType))
+
+		// Show GitHub API test results
+		if m.testInProgress {
+			s.WriteString("\nTesting GitHub API connection...\n")
+		} else if m.testError != nil {
+			s.WriteString(fmt.Sprintf("\n⚠ GitHub API test failed: %v\n", m.testError))
+		} else if len(m.testRepos) > 0 {
+			s.WriteString("\n✓ GitHub API test successful!\n")
+			s.WriteString("Sample repositories:\n")
+			for _, repo := range m.testRepos {
+				s.WriteString(fmt.Sprintf("  - %s\n", repo))
+			}
+		}
+
+		// Show app installation check
+		if m.checkingInstallation {
+			s.WriteString("\nChecking GitHub app installation...\n")
+		} else if m.appInstallError != nil {
+			s.WriteString(fmt.Sprintf("\n⚠ Failed to check app installation: %v\n", m.appInstallError))
+		} else if m.appInstalled {
+			s.WriteString("\n✓ GitHub app 'nimbul-coding-cave' is installed!\n")
+
+			// Show installation auth test
+			if m.testingInstallAuth {
+				s.WriteString("\nTesting app installation authentication...\n")
+			} else if m.installAuthError != nil {
+				s.WriteString(fmt.Sprintf("\n⚠ Installation auth test failed: %v\n", m.installAuthError))
+			} else if m.installAuthSuccess {
+				s.WriteString("\n✓ Installation authentication verified! Can list webhooks using app auth.\n")
+			}
+		} else if m.waitingForInstall {
+			s.WriteString("\n⚠ GitHub app 'nimbul-coding-cave' is not installed.\n")
+			s.WriteString(fmt.Sprintf("\nPlease install the app at:\n%s\n\n", m.appInstallURL))
+			if m.verifyingInstall {
+				s.WriteString("Verifying installation...\n")
+			} else {
+				s.WriteString("Press any key after you have completed the installation.\n")
+			}
+		}
+
+		// Only show token details if everything is complete
+		if (m.appInstalled && (m.installAuthSuccess || m.installAuthError != nil)) || (!m.waitingForInstall && !m.checkingInstallation && !m.verifyingInstall && !m.testingInstallAuth) {
+			s.WriteString(fmt.Sprintf("\nToken: %s", m.token.AccessToken))
+			s.WriteString("\n")
+			s.WriteString(fmt.Sprintf("Refresh Token: %s", m.token.RefreshToken))
+			s.WriteString("\n")
+			s.WriteString(fmt.Sprintf("Expiry: %s", m.token.Expiry))
+			s.WriteString("\n")
+			s.WriteString(fmt.Sprintf("Token Type: %s", m.token.TokenType))
+		}
 	}
 
 	return s.String()

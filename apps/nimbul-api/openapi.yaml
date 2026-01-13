@@ -1,5 +1,51 @@
 components:
   schemas:
+    CreateConfigRequestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateConfigRequestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        dockerfile_path:
+          type: string
+        provider:
+          type: string
+        repo_clone_url:
+          type: string
+        repo_full_name:
+          type: string
+        repo_name:
+          type: string
+        repo_owner:
+          type: string
+        webhook_secret:
+          type: string
+      required:
+        - provider
+        - repo_owner
+        - repo_name
+        - repo_full_name
+        - repo_clone_url
+        - dockerfile_path
+        - webhook_secret
+      type: object
+    CreateConfigResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateConfigResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        config_id:
+          type: string
+      required:
+        - config_id
+      type: object
     ErrorDetail:
       additionalProperties: false
       properties:
@@ -51,6 +97,37 @@ components:
           example: https://example.com/errors/example
           format: uri
           type: string
+      type: object
+    GetGitHubTokenResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GetGitHubTokenResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          type: string
+      required:
+        - token
+      type: object
+    GetProvidersResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GetProvidersResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        providers:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - providers
       type: object
     HealthCheckResponseBody:
       additionalProperties: false
@@ -173,6 +250,35 @@ components:
       required:
         - credential_id
       type: object
+    UpdateConfigWebhookRequestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateConfigWebhookRequestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        webhook_id:
+          format: int64
+          type: integer
+      required:
+        - webhook_id
+      type: object
+    UpdateConfigWebhookResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateConfigWebhookResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        success:
+          type: boolean
+      required:
+        - success
+      type: object
     UserResponse:
       additionalProperties: false
       properties:
@@ -195,6 +301,67 @@ info:
   version: 1.0.0
 openapi: 3.0.3
 paths:
+  /configs:
+    post:
+      operationId: post-configs
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConfigRequestBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateConfigResponseBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post configs
+  /configs/{id}/webhook:
+    patch:
+      operationId: patch-configs-by-id-webhook
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConfigWebhookRequestBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateConfigWebhookResponseBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Patch configs by ID webhook
   /credentials:
     post:
       operationId: post-credentials
@@ -223,6 +390,28 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Post credentials
+  /credentials/github/token:
+    get:
+      operationId: get-credentials-github-token
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetGitHubTokenResponseBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get credentials github token
   /health:
     get:
       operationId: get-health
@@ -285,6 +474,28 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get me
+  /providers:
+    get:
+      operationId: get-providers
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetProvidersResponseBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get providers
   /register:
     post:
       operationId: post-register
@@ -308,3 +519,45 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Post register
+  /webhooks/github/{id}:
+    post:
+      operationId: post-webhooks-github-by-id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Hub-Signature
+          schema:
+            type: string
+        - in: header
+          name: X-GitHub-Hook-ID
+          schema:
+            format: int64
+            type: integer
+        - in: header
+          name: X-GitHub-Event
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+          application/octet-stream:
+            schema:
+              contentMediaType: application/octet-stream
+              format: binary
+              type: string
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post webhooks github by ID

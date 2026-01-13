@@ -22,6 +22,21 @@ type Credential struct {
 	ExpiresAt  pgtype.Timestamptz
 }
 
+type RepoConfig struct {
+	ID             string
+	OwnerID        string
+	Provider       string
+	RepoOwner      string
+	RepoName       string
+	RepoFullName   string
+	RepoCloneUrl   string
+	DockerfilePath string
+	WebhookSecret  string
+	WebhookID      pgtype.Int8
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type User struct {
 	ID           string
 	Email        string

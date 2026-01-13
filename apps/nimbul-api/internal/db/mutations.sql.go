@@ -11,6 +11,60 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createConfig = `-- name: CreateConfig :one
+INSERT INTO repo_configs (
+    id, owner_id, provider, repo_owner, repo_name, repo_full_name, 
+    repo_clone_url, dockerfile_path, webhook_secret, webhook_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+RETURNING id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at
+`
+
+type CreateConfigParams struct {
+	ID             string
+	OwnerID        string
+	Provider       string
+	RepoOwner      string
+	RepoName       string
+	RepoFullName   string
+	RepoCloneUrl   string
+	DockerfilePath string
+	WebhookSecret  string
+	WebhookID      pgtype.Int8
+}
+
+func (q *Queries) CreateConfig(ctx context.Context, arg CreateConfigParams) (RepoConfig, error) {
+	row := q.db.QueryRow(ctx, createConfig,
+		arg.ID,
+		arg.OwnerID,
+		arg.Provider,
+		arg.RepoOwner,
+		arg.RepoName,
+		arg.RepoFullName,
+		arg.RepoCloneUrl,
+		arg.DockerfilePath,
+		arg.WebhookSecret,
+		arg.WebhookID,
+	)
+	var i RepoConfig
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.RepoFullName,
+		&i.RepoCloneUrl,
+		&i.DockerfilePath,
+		&i.WebhookSecret,
+		&i.WebhookID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createCredential = `-- name: CreateCredential :one
 INSERT INTO credentials (
   owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, expires_at 
@@ -83,6 +137,90 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateConfigWebhookID = `-- name: UpdateConfigWebhookID :one
+UPDATE repo_configs
+SET webhook_id = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, owner_id, provider, repo_owner, repo_name, repo_full_name, repo_clone_url, dockerfile_path, webhook_secret, webhook_id, created_at, updated_at
+`
+
+type UpdateConfigWebhookIDParams struct {
+	ID        string
+	WebhookID pgtype.Int8
+}
+
+func (q *Queries) UpdateConfigWebhookID(ctx context.Context, arg UpdateConfigWebhookIDParams) (RepoConfig, error) {
+	row := q.db.QueryRow(ctx, updateConfigWebhookID, arg.ID, arg.WebhookID)
+	var i RepoConfig
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.RepoFullName,
+		&i.RepoCloneUrl,
+		&i.DockerfilePath,
+		&i.WebhookSecret,
+		&i.WebhookID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateCredential = `-- name: UpdateCredential :one
+UPDATE credentials
+SET 
+  ciphertext = $4,
+  token_nonce = $5,
+  wrapped_dek = $6,
+  dek_nonce = $7,
+  expires_at = $8,
+  last_used_at = NOW()
+WHERE owner_id = $1 AND provider = $2 AND token_type = $3
+RETURNING id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at, expires_at
+`
+
+type UpdateCredentialParams struct {
+	OwnerID    string
+	Provider   string
+	TokenType  string
+	Ciphertext []byte
+	TokenNonce []byte
+	WrappedDek []byte
+	DekNonce   []byte
+	ExpiresAt  pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateCredential(ctx context.Context, arg UpdateCredentialParams) (Credential, error) {
+	row := q.db.QueryRow(ctx, updateCredential,
+		arg.OwnerID,
+		arg.Provider,
+		arg.TokenType,
+		arg.Ciphertext,
+		arg.TokenNonce,
+		arg.WrappedDek,
+		arg.DekNonce,
+		arg.ExpiresAt,
+	)
+	var i Credential
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Provider,
+		&i.TokenType,
+		&i.Ciphertext,
+		&i.TokenNonce,
+		&i.WrappedDek,
+		&i.DekNonce,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
