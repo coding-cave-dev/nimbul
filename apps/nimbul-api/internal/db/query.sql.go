@@ -10,7 +10,7 @@ import (
 )
 
 const getCredentialByOwnerIDAndTokenType = `-- name: GetCredentialByOwnerIDAndTokenType :one
-SELECT id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at FROM credentials
+SELECT id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at, expires_at FROM credentials
 WHERE owner_id = $1 AND token_type = $2 LIMIT 1
 `
 
@@ -33,6 +33,7 @@ func (q *Queries) GetCredentialByOwnerIDAndTokenType(ctx context.Context, arg Ge
 		&i.DekNonce,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }

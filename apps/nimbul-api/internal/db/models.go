@@ -19,6 +19,7 @@ type Credential struct {
 	DekNonce   []byte
 	CreatedAt  pgtype.Timestamptz
 	LastUsedAt pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
 }
 
 type User struct {

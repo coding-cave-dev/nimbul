@@ -134,6 +134,45 @@ components:
         - token
         - user
       type: object
+    StoreCredentialRequestBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StoreCredentialRequestBody.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        provider:
+          type: string
+        token:
+          type: string
+        token_type:
+          type: string
+      required:
+        - provider
+        - token_type
+        - token
+        - expires_at
+      type: object
+    StoreCredentialResponseBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StoreCredentialResponseBody.json
+          format: uri
+          readOnly: true
+          type: string
+        credential_id:
+          format: int64
+          type: integer
+      required:
+        - credential_id
+      type: object
     UserResponse:
       additionalProperties: false
       properties:
@@ -156,6 +195,34 @@ info:
   version: 1.0.0
 openapi: 3.0.3
 paths:
+  /credentials:
+    post:
+      operationId: post-credentials
+      parameters:
+        - in: header
+          name: Authorization
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCredentialRequestBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreCredentialResponseBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Post credentials
   /health:
     get:
       operationId: get-health

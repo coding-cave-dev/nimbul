@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
@@ -91,6 +92,23 @@ type RegisterResponseBody struct {
 	User   UserResponse `json:"user"`
 }
 
+// StoreCredentialRequestBody defines model for StoreCredentialRequestBody.
+type StoreCredentialRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string   `json:"$schema,omitempty"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Provider  string    `json:"provider"`
+	Token     string    `json:"token"`
+	TokenType string    `json:"token_type"`
+}
+
+// StoreCredentialResponseBody defines model for StoreCredentialResponseBody.
+type StoreCredentialResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	CredentialId int64   `json:"credential_id"`
+}
+
 // UserResponse defines model for UserResponse.
 type UserResponse struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -99,10 +117,18 @@ type UserResponse struct {
 	Id     string  `json:"id"`
 }
 
+// PostCredentialsParams defines parameters for PostCredentials.
+type PostCredentialsParams struct {
+	Authorization *string `json:"Authorization,omitempty"`
+}
+
 // GetMeParams defines parameters for GetMe.
 type GetMeParams struct {
 	Authorization *string `json:"Authorization,omitempty"`
 }
+
+// PostCredentialsJSONRequestBody defines body for PostCredentials for application/json ContentType.
+type PostCredentialsJSONRequestBody = StoreCredentialRequestBody
 
 // PostLoginJSONRequestBody defines body for PostLogin for application/json ContentType.
 type PostLoginJSONRequestBody = LoginRequestBody
@@ -183,6 +209,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// PostCredentialsWithBody request with any body
+	PostCredentialsWithBody(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostCredentials(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetHealth request
 	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -198,6 +229,30 @@ type ClientInterface interface {
 	PostRegisterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	PostRegister(ctx context.Context, body PostRegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) PostCredentialsWithBody(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostCredentialsRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostCredentials(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostCredentialsRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -270,6 +325,61 @@ func (c *Client) PostRegister(ctx context.Context, body PostRegisterJSONRequestB
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewPostCredentialsRequest calls the generic PostCredentials builder with application/json body
+func NewPostCredentialsRequest(server string, params *PostCredentialsParams, body PostCredentialsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostCredentialsRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewPostCredentialsRequestWithBody generates requests for PostCredentials with any type of body
+func NewPostCredentialsRequestWithBody(server string, params *PostCredentialsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/credentials")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.Authorization != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "Authorization", runtime.ParamLocationHeader, *params.Authorization)
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Authorization", headerParam0)
+		}
+
+	}
+
+	return req, nil
 }
 
 // NewGetHealthRequest generates requests for GetHealth
@@ -464,6 +574,11 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// PostCredentialsWithBodyWithResponse request with any body
+	PostCredentialsWithBodyWithResponse(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error)
+
+	PostCredentialsWithResponse(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error)
+
 	// GetHealthWithResponse request
 	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
 
@@ -479,6 +594,29 @@ type ClientWithResponsesInterface interface {
 	PostRegisterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostRegisterResponse, error)
 
 	PostRegisterWithResponse(ctx context.Context, body PostRegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*PostRegisterResponse, error)
+}
+
+type PostCredentialsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *StoreCredentialResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r PostCredentialsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostCredentialsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type GetHealthResponse struct {
@@ -573,6 +711,23 @@ func (r PostRegisterResponse) StatusCode() int {
 	return 0
 }
 
+// PostCredentialsWithBodyWithResponse request with arbitrary body returning *PostCredentialsResponse
+func (c *ClientWithResponses) PostCredentialsWithBodyWithResponse(ctx context.Context, params *PostCredentialsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error) {
+	rsp, err := c.PostCredentialsWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostCredentialsResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostCredentialsWithResponse(ctx context.Context, params *PostCredentialsParams, body PostCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostCredentialsResponse, error) {
+	rsp, err := c.PostCredentials(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostCredentialsResponse(rsp)
+}
+
 // GetHealthWithResponse request returning *GetHealthResponse
 func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error) {
 	rsp, err := c.GetHealth(ctx, reqEditors...)
@@ -623,6 +778,39 @@ func (c *ClientWithResponses) PostRegisterWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParsePostRegisterResponse(rsp)
+}
+
+// ParsePostCredentialsResponse parses an HTTP response from a PostCredentialsWithResponse call
+func ParsePostCredentialsResponse(rsp *http.Response) (*PostCredentialsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostCredentialsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StoreCredentialResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call

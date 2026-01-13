@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"time"
 
 	"github.com/coding-cave-dev/nimbul/internal/auth"
+	"github.com/coding-cave-dev/nimbul/internal/credentials"
 	"github.com/coding-cave-dev/nimbul/internal/db"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
@@ -48,11 +49,27 @@ type LoginResponse struct {
 }
 
 type MeRequest struct {
-	Authorization string `header:"Authorization"`
+	AuthResolver
 }
 
 type MeResponse struct {
 	Body auth.UserResponse `json:"body"`
+}
+
+type StoreCredentialRequest struct {
+	AuthResolver
+	Body struct {
+		Provider  string    `json:"provider"`
+		TokenType string    `json:"token_type"`
+		Token     string    `json:"token"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+}
+
+type StoreCredentialResponse struct {
+	Body struct {
+		CredentialID int64 `json:"credential_id"`
+	}
 }
 
 func NewRouter(queries *db.Queries) *fiber.App {
@@ -66,6 +83,12 @@ func NewRouter(queries *db.Queries) *fiber.App {
 	}
 
 	authService := auth.NewService(queries, jwtSecret)
+
+	// Initialize credentials service
+	credentialsService, err := credentials.NewService(queries)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize credentials service: %v", err))
+	}
 
 	huma.Get(api, "/health", func(ctx context.Context, input *struct{}) (*HealthCheckResponse, error) {
 		resp := &HealthCheckResponse{}
@@ -100,24 +123,18 @@ func NewRouter(queries *db.Queries) *fiber.App {
 	})
 
 	huma.Get(api, "/me", func(ctx context.Context, input *MeRequest) (*MeResponse, error) {
-		// Extract Authorization header
-		authHeader := input.Authorization
-		if authHeader == "" {
-			return nil, huma.Error401Unauthorized("Missing Authorization header")
-		}
-
-		// Extract Bearer token
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			return nil, huma.Error401Unauthorized("Invalid Authorization header format")
-		}
-
-		token := parts[1]
-
-		// Validate token and get user ID
-		userID, _, err := authService.ValidateToken(token)
+		// Validate authentication using middleware
+		var err error
+		ctx, err = ValidateAuth(ctx, input.AuthResolver.Authorization, authService)
 		if err != nil {
-			return nil, huma.Error401Unauthorized("Invalid or expired token")
+			fmt.Println("Error validating auth:", err)
+			return nil, err
+		}
+
+		// Get user ID from context
+		userID := GetUserID(ctx)
+		if userID == "" {
+			return nil, huma.Error401Unauthorized("User ID not found in context")
 		}
 
 		// Get user from database
@@ -131,6 +148,48 @@ func NewRouter(queries *db.Queries) *fiber.App {
 
 		resp := &MeResponse{}
 		resp.Body = *user
+		return resp, nil
+	})
+
+	huma.Post(api, "/credentials", func(ctx context.Context, input *StoreCredentialRequest) (*StoreCredentialResponse, error) {
+		// Validate authentication using middleware
+		var err error
+		ctx, err = ValidateAuth(ctx, input.AuthResolver.Authorization, authService)
+		if err != nil {
+			return nil, err
+		}
+
+		// Get user ID from context
+		userID := GetUserID(ctx)
+		if userID == "" {
+			return nil, huma.Error401Unauthorized("User ID not found in context")
+		}
+
+		// Validate input
+		if input.Body.Provider == "" {
+			return nil, huma.Error400BadRequest("provider is required")
+		}
+		if input.Body.TokenType == "" {
+			return nil, huma.Error400BadRequest("token_type is required")
+		}
+		if input.Body.Token == "" {
+			return nil, huma.Error400BadRequest("token is required")
+		}
+
+		// Store credential
+		result, err := credentialsService.StoreCredential(ctx, credentials.StoreCredentialParams{
+			OwnerID:   userID,
+			Provider:  input.Body.Provider,
+			TokenType: input.Body.TokenType,
+			Token:     input.Body.Token,
+			ExpiresAt: input.Body.ExpiresAt,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to store credential", err)
+		}
+
+		resp := &StoreCredentialResponse{}
+		resp.Body.CredentialID = result.CredentialID
 		return resp, nil
 	})
 

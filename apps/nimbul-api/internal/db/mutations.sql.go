@@ -7,15 +7,17 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createCredential = `-- name: CreateCredential :one
 INSERT INTO credentials (
-  owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce
+  owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, expires_at 
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7
+  $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at
+RETURNING id, owner_id, provider, token_type, ciphertext, token_nonce, wrapped_dek, dek_nonce, created_at, last_used_at, expires_at
 `
 
 type CreateCredentialParams struct {
@@ -26,6 +28,7 @@ type CreateCredentialParams struct {
 	TokenNonce []byte
 	WrappedDek []byte
 	DekNonce   []byte
+	ExpiresAt  pgtype.Timestamptz
 }
 
 func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialParams) (Credential, error) {
@@ -37,6 +40,7 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		arg.TokenNonce,
 		arg.WrappedDek,
 		arg.DekNonce,
+		arg.ExpiresAt,
 	)
 	var i Credential
 	err := row.Scan(
@@ -50,6 +54,7 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		&i.DekNonce,
 		&i.CreatedAt,
 		&i.LastUsedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
