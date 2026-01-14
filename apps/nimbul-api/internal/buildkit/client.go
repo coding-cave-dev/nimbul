@@ -10,6 +10,8 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/moby/buildkit/session/filesync"
+	"github.com/tonistiigi/fsutil"
 )
 
 type Builder struct {
@@ -44,17 +46,41 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	}
 	defer c.Close()
 
-	// Docker config for registry auth
+	// Create session
+	sess, err := session.NewSession(ctx, "nimbul")
+	if err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
+
+	// Add filesync provider for local directories
+	contextFS, err := fsutil.NewFS(req.ContextDir)
+	if err != nil {
+		return fmt.Errorf("failed to create context fs: %w", err)
+	}
+	sess.Allow(filesync.NewFSSyncProvider(filesync.StaticDirSource{
+		"context":    contextFS,
+		"dockerfile": contextFS,
+	}))
+
+	// Add auth provider
 	configfile := configfile.New(filepath.Join(b.DockerConfig, "config.json"))
 	auth := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		ConfigFile: configfile,
 	})
+	sess.Allow(auth)
+
+	// Run session in background
+	go func() {
+		_ = sess.Run(ctx, c.Dialer())
+	}()
+	defer sess.Close()
 
 	// Set Dockerfile path in frontend attrs if specified
 	frontendAttrs := map[string]string{}
 	if req.Dockerfile != "" && req.Dockerfile != "Dockerfile" {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
+
 	// Use Solve for standard Dockerfile builds
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
@@ -71,7 +97,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 				},
 			},
 		},
-		Session: []session.Attachable{auth},
+		SharedSession: sess,
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("solve: %w", err)
