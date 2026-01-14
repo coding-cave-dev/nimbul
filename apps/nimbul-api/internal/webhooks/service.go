@@ -10,6 +10,7 @@ import (
 
 	"github.com/coding-cave-dev/nimbul/internal/configs"
 	"github.com/coding-cave-dev/nimbul/internal/github"
+	"github.com/coding-cave-dev/nimbul/internal/k8s"
 	"github.com/coding-cave-dev/nimbul/internal/nimbulconfig"
 	ghub "github.com/google/go-github/v81/github"
 )
@@ -133,6 +134,23 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 			fmt.Println("=== End Manifest ===")
 		}
 	}
+
+	// 9. Test Kubernetes client connectivity
+	fmt.Println("\n=== Testing Kubernetes Client ===")
+	k8sClient, err := k8s.GetClient()
+	if err != nil {
+		return fmt.Errorf("failed to initialize Kubernetes client: %w", err)
+	}
+
+	// Get server version to verify connectivity
+	version, err := k8sClient.Discovery().ServerVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get Kubernetes server version: %w", err)
+	}
+
+	fmt.Printf("✓ Successfully connected to Kubernetes cluster\n")
+	fmt.Printf("  Server Version: %s\n", version.String())
+	fmt.Println("=== Kubernetes Client Test Complete ===")
 
 	return nil
 }
