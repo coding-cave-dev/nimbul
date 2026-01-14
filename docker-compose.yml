@@ -11,6 +11,14 @@ services:
     volumes:
       - nimbul-postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
+  buildkitd:
+    image: moby/buildkit:latest
+    container_name: nimbul-buildkitd
+    command: ["buildkitd", "--addr=tcp://0.0.0.0:1234"]
+    privileged: true
+    ports:
+      - "1234:1234"
+    restart: unless-stopped
 
 volumes:
   nimbul-postgres-data:

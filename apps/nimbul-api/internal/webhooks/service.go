@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/coding-cave-dev/nimbul/internal/buildkit"
 	"github.com/coding-cave-dev/nimbul/internal/configs"
 	"github.com/coding-cave-dev/nimbul/internal/github"
 	"github.com/coding-cave-dev/nimbul/internal/k8s"
@@ -89,17 +89,33 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 		return fmt.Errorf("failed to render nimbul.yaml templates: %w", err)
 	}
 
-	// 7. Build Docker images for each build config
+	// 7. Build Docker images for each build config using BuildKit
+	builder := buildkit.NewFromEnv()
 	for _, build := range renderedConfig.Build {
 		// Get full paths relative to cloned repo
-		dockerfilePath := filepath.Join(tempDir, build.Dockerfile)
 		buildContext := filepath.Join(tempDir, build.Context)
+		dockerfileFullPath := filepath.Join(tempDir, build.Dockerfile)
+
+		// Calculate Dockerfile path relative to context
+		// Both build.Context and build.Dockerfile are relative to repo root
+		dockerfileRelPath, err := filepath.Rel(buildContext, dockerfileFullPath)
+		if err != nil {
+			return fmt.Errorf("failed to calculate Dockerfile path relative to context: %w", err)
+		}
 
 		// Build image with each tag
 		for _, tag := range build.Tags {
 			// Parse image:tag format
 			imageName, tagValue := parseImageTag(tag)
-			if err := s.buildDockerImage(ctx, dockerfilePath, buildContext, imageName, tagValue); err != nil {
+			imageRef := fmt.Sprintf("%s:%s", imageName, tagValue)
+
+			buildReq := buildkit.BuildRequest{
+				ContextDir: buildContext,
+				Dockerfile: dockerfileRelPath,
+				ImageRef:   imageRef,
+			}
+
+			if err := builder.BuildAndPush(ctx, buildReq); err != nil {
 				return fmt.Errorf("failed to build Docker image %s:%s: %w", imageName, tagValue, err)
 			}
 			fmt.Printf("Successfully built Docker image: %s:%s\n", imageName, tagValue)
@@ -151,21 +167,6 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 	fmt.Printf("✓ Successfully connected to Kubernetes cluster\n")
 	fmt.Printf("  Server Version: %s\n", version.String())
 	fmt.Println("=== Kubernetes Client Test Complete ===")
-
-	return nil
-}
-
-// buildDockerImage builds a Docker image using the docker command
-func (s *Service) buildDockerImage(ctx context.Context, dockerfilePath, buildContext, imageName, tag string) error {
-	// Run docker build command
-	// docker build -t {imageName}:{tag} -f {dockerfilePath} {buildContext}
-	cmd := exec.CommandContext(ctx, "docker", "build", "-t", fmt.Sprintf("%s:%s", imageName, tag), "-f", dockerfilePath, buildContext)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker build failed: %w", err)
-	}
 
 	return nil
 }
