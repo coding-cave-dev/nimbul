@@ -133,10 +133,21 @@ func setValueAtPath(doc map[string]interface{}, path string, value interface{}) 
 // parsePath parses a JSONPath-style path into segments
 // Example: "spec.template.spec.containers[0].image" -> ["spec", "template", "spec", "containers", "[0]", "image"]
 func parsePath(path string) []string {
-	// Use regex to split by dots, but preserve array indices like [0]
-	re := regexp.MustCompile(`(\[[\d]+\]|[^.]+)`)
-	matches := re.FindAllString(path, -1)
-	return matches
+	var result []string
+	// Split by dots first
+	segments := strings.Split(path, ".")
+
+	// For each segment, split array indices
+	arrayIndexRegex := regexp.MustCompile(`^([^\[]+)(\[[\d]+\])$`)
+	for _, seg := range segments {
+		if matches := arrayIndexRegex.FindStringSubmatch(seg); matches != nil {
+			// Segment like "containers[0]" -> ["containers", "[0]"]
+			result = append(result, matches[1], matches[2])
+		} else {
+			result = append(result, seg)
+		}
+	}
+	return result
 }
 
 // navigateTo navigates to a path segment in a nested structure
