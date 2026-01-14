@@ -55,7 +55,6 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	if req.Dockerfile != "" && req.Dockerfile != "Dockerfile" {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
-
 	// Use Solve for standard Dockerfile builds
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
