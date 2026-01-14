@@ -139,15 +139,18 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 				return fmt.Errorf("failed to apply overrides to manifest %s: %w", manifest.Path, err)
 			}
 
-			// Serialize and print the resulting manifest
+			// Serialize manifest
 			serialized, err := nimbulconfig.SerializeManifests(docs)
 			if err != nil {
 				return fmt.Errorf("failed to serialize manifest %s: %w", manifest.Path, err)
 			}
 
-			fmt.Printf("\n=== Processed Manifest: %s ===\n", manifest.Path)
-			fmt.Println(serialized)
-			fmt.Println("=== End Manifest ===")
+			// Apply manifest to cluster
+			fmt.Printf("\n=== Applying Manifest: %s ===\n", manifest.Path)
+			if err := k8s.ApplyManifests(ctx, []byte(serialized)); err != nil {
+				return fmt.Errorf("failed to apply manifest %s: %w", manifest.Path, err)
+			}
+			fmt.Printf("✓ Successfully applied manifest: %s\n", manifest.Path)
 		}
 	}
 
