@@ -55,7 +55,7 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 	}
 
 	// Use commit SHA for checking file existence (more reliable than ref)
-	commitSHA := pushEvent.GetHeadCommit().GetSHA()
+	commitSHA := pushEvent.GetHeadCommit().GetID()
 	if commitSHA == "" {
 		return fmt.Errorf("push event missing head commit SHA")
 	}
