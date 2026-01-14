@@ -53,13 +53,18 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	}
 
 	// Add filesync provider for local directories
+	// Maps "context" and "dockerfile" names to the actual directory
 	contextFS, err := fsutil.NewFS(req.ContextDir)
 	if err != nil {
 		return fmt.Errorf("failed to create context fs: %w", err)
 	}
+	dockerfileFS, err := fsutil.NewFS(req.ContextDir)
+	if err != nil {
+		return fmt.Errorf("failed to create dockerfile fs: %w", err)
+	}
 	sess.Allow(filesync.NewFSSyncProvider(filesync.StaticDirSource{
 		"context":    contextFS,
-		"dockerfile": contextFS,
+		"dockerfile": dockerfileFS,
 	}))
 
 	// Add auth provider
@@ -82,13 +87,10 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	}
 
 	// Use Solve for standard Dockerfile builds
+	// NO LocalDirs - the SharedSession's filesync provider handles file access
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"context":    req.ContextDir,
-			"dockerfile": req.ContextDir,
-		},
 		Exports: []bkclient.ExportEntry{
 			{
 				Type: "docker",
