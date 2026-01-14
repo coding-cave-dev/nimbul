@@ -86,9 +86,9 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 
 	// 4. Build Docker image
 	// Image name: repo full name (e.g., "owner/repo-name")
-	imageName := config.RepoFullName
+	imageName := strings.ReplaceAll(config.RepoFullName, "/", "-")
 	// Tag: use the ref (normalized)
-	tag := normalizeRefForTag(ref, commitSHA)
+	tag := commitSHA[:12]
 
 	// Get full path to Dockerfile in cloned repo
 	dockerfilePath := filepath.Join(tempDir, config.DockerfilePath)
