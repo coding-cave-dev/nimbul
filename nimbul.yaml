@@ -6,7 +6,6 @@ build:
     dockerfile: apps/nimbul-api/Dockerfile
     context: apps/nimbul-api
     tags:
-      - coding-cave-dev-nimbul-api:latest
       - coding-cave-dev-nimbul-api:{{ .COMMIT_SHA }}
 
 deploy:
@@ -18,5 +17,5 @@ deploy:
           - path: spec.template.spec.containers[0].image
             match:
               kind: Deployment
-            value: '{{ .BUILD_TAG[1] }}'
+            value: '{{ .BUILD_TAG[0] }}'
     
