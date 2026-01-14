@@ -10,6 +10,8 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/moby/buildkit/session/filesync"
+	"github.com/tonistiigi/fsutil"
 )
 
 type Builder struct {
@@ -44,19 +46,17 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	}
 	defer c.Close()
 
-	// BuildKit session for registry auth (uses docker config.json)
-	sess, err := session.NewSession(ctx, "nimbul")
-	if err != nil {
-		return fmt.Errorf("session: %w", err)
-	}
-
+	// Docker config for registry auth
 	configfile := configfile.New(filepath.Join(b.DockerConfig, "config.json"))
 	auth := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		ConfigFile: configfile,
 	})
 
-	sess.Allow(auth)
-	go sess.Run(ctx, c.Dialer())
+	// Filesync provider for local directories
+	contextFS, err := fsutil.NewFS(req.ContextDir)
+	if err != nil {
+		return fmt.Errorf("failed to create context fs: %w", err)
+	}
 
 	// Set Dockerfile path in frontend attrs if specified
 	frontendAttrs := map[string]string{}
@@ -64,13 +64,13 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
 
-	// Use Solve instead of Build for standard Dockerfile builds
+	// Use Solve for standard Dockerfile builds
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"context":    req.ContextDir,
-			"dockerfile": req.ContextDir,
+		LocalMounts: map[string]fsutil.FS{
+			"context":    contextFS,
+			"dockerfile": contextFS,
 		},
 		Exports: []bkclient.ExportEntry{
 			{
@@ -80,7 +80,13 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 				},
 			},
 		},
-		SharedSession: sess,
+		Session: []session.Attachable{
+			auth,
+			filesync.NewFSSyncProvider(filesync.StaticDirSource{
+				"context":    contextFS,
+				"dockerfile": contextFS,
+			}),
+		},
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("solve: %w", err)
