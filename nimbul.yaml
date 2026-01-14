@@ -6,7 +6,7 @@ build:
     dockerfile: apps/nimbul-api/Dockerfile
     context: apps/nimbul-api
     tags:
-      - coding-cave-dev-nimbul-api:{{ .COMMIT_SHA }}
+      - coding-cave-dev-nimbul-api:{{ .COMMIT_SHORT }}
 
 deploy:
   - name: deploy-nimbul-api

@@ -105,6 +105,35 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 		}
 	}
 
+	// 8. Process deploy stage for each deploy config
+	for _, deploy := range renderedConfig.Deploy {
+		for _, manifest := range deploy.Manifests {
+			// Get full path to manifest file in cloned repo
+			manifestPath := filepath.Join(tempDir, manifest.Path)
+
+			// Parse manifest file
+			docs, err := nimbulconfig.ParseManifestFile(manifestPath)
+			if err != nil {
+				return fmt.Errorf("failed to parse manifest file %s: %w", manifest.Path, err)
+			}
+
+			// Apply overrides
+			if err := nimbulconfig.ApplyOverrides(docs, manifest.Overrides); err != nil {
+				return fmt.Errorf("failed to apply overrides to manifest %s: %w", manifest.Path, err)
+			}
+
+			// Serialize and print the resulting manifest
+			serialized, err := nimbulconfig.SerializeManifests(docs)
+			if err != nil {
+				return fmt.Errorf("failed to serialize manifest %s: %w", manifest.Path, err)
+			}
+
+			fmt.Printf("\n=== Processed Manifest: %s ===\n", manifest.Path)
+			fmt.Println(serialized)
+			fmt.Println("=== End Manifest ===")
+		}
+	}
+
 	return nil
 }
 
