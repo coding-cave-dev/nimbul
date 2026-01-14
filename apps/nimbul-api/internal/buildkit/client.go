@@ -37,6 +37,7 @@ type BuildRequest struct {
 	Dockerfile string // path to Dockerfile relative to context (e.g., "Dockerfile" or "path/to/Dockerfile")
 	ImageRef   string // ghcr.io/coding-cave-dev/nimbul-api:sha-xxxx
 	CacheRef   string // ghcr.io/coding-cave-dev/nimbul-api:buildcache
+	Push       bool   // whether to push to registry
 }
 
 func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
@@ -52,8 +53,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		return fmt.Errorf("session: %w", err)
 	}
 
-	// Add filesync provider for local directories
-	// Maps "context" and "dockerfile" names to the actual directory
+	// Add filesync provider for local directories (sending context TO daemon)
 	contextFS, err := fsutil.NewFS(req.ContextDir)
 	if err != nil {
 		return fmt.Errorf("failed to create context fs: %w", err)
@@ -67,7 +67,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		"dockerfile": dockerfileFS,
 	}))
 
-	// Add auth provider
+	// Add auth provider for registry
 	configfile := configfile.New(filepath.Join(b.DockerConfig, "config.json"))
 	auth := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		ConfigFile: configfile,
@@ -86,19 +86,23 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
 
+	// Configure exports - use "image" type which pushes to registry
+	// This avoids needing to receive data back from BuildKit
+	exports := []bkclient.ExportEntry{
+		{
+			Type: "image",
+			Attrs: map[string]string{
+				"name": req.ImageRef,
+				"push": "true",
+			},
+		},
+	}
+
 	// Use Solve for standard Dockerfile builds
-	// NO LocalDirs - the SharedSession's filesync provider handles file access
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		Exports: []bkclient.ExportEntry{
-			{
-				Type: "docker",
-				Attrs: map[string]string{
-					"name": req.ImageRef,
-				},
-			},
-		},
+		Exports:       exports,
 		SharedSession: sess,
 	}, nil)
 	if err != nil {
