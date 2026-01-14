@@ -42,6 +42,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	if err != nil {
 		return fmt.Errorf("buildkit client: %w", err)
 	}
+	defer c.Close()
 
 	// BuildKit session for registry auth (uses docker config.json)
 	sess, err := session.NewSession(ctx, "nimbul")
@@ -63,39 +64,24 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
 
-	_, err = c.Build(ctx, bkclient.SolveOpt{
+	// Use Solve instead of Build for standard Dockerfile builds
+	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
 		LocalDirs: map[string]string{
-			"context": req.ContextDir,
+			"context":    req.ContextDir,
+			"dockerfile": req.ContextDir,
 		},
-		// CacheImports: []bkclient.CacheOptionsEntry{
-		// 	{
-		// 		Type: "registry",
-		// 		Attrs: map[string]string{
-		// 			"ref": req.CacheRef,
-		// 		},
-		// 	},
-		// },
-		// CacheExports: []bkclient.CacheOptionsEntry{
-		// 	{
-		// 		Type: "registry",
-		// 		Attrs: map[string]string{
-		// 			"ref":  req.CacheRef,
-		// 			"mode": "max",
-		// 		},
-		// 	},
-		// },
 		Exports: []bkclient.ExportEntry{
 			{
 				Type: "docker",
 				Attrs: map[string]string{
 					"name": req.ImageRef,
-					"load": "true",
 				},
 			},
 		},
-	}, "dockerfile.v0", nil, nil)
+		SharedSession: sess,
+	}, nil)
 	if err != nil {
 		return fmt.Errorf("solve: %w", err)
 	}
