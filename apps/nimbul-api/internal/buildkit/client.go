@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/docker/cli/cli/config/configfile"
+	"github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -68,9 +68,12 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	}))
 
 	// Add auth provider for registry
-	configfile := configfile.New(filepath.Join(b.DockerConfig, "config.json"))
+	dockerConfig, err := config.Load(b.DockerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to load docker config: %w", err)
+	}
 	auth := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
-		ConfigFile: configfile,
+		ConfigFile: dockerConfig,
 	})
 	sess.Allow(auth)
 
