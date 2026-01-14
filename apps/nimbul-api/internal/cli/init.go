@@ -326,7 +326,7 @@ func (m initModel) validateDockerfile() tea.Cmd {
 
 		// Use GitHub package to check if file exists
 		ghClient := github.NewClient(ctx, tokenResp.JSON200.Token)
-		exists, err := github.FileExists(ctx, ghClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, m.state.dockerfilePath)
+		exists, err := github.FileExists(ctx, ghClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, m.state.dockerfilePath, "")
 		if err != nil {
 			return dockerfileValidatedMsg{
 				path:   m.state.dockerfilePath,

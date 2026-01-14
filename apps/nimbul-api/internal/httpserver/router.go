@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coding-cave-dev/nimbul/internal/auth"
 	"github.com/coding-cave-dev/nimbul/internal/configs"
 	"github.com/coding-cave-dev/nimbul/internal/credentials"
 	"github.com/coding-cave-dev/nimbul/internal/db"
+	"github.com/coding-cave-dev/nimbul/internal/webhooks"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humafiber"
 	"github.com/gofiber/fiber/v2"
@@ -158,6 +160,9 @@ func NewRouter(queries *db.Queries) *fiber.App {
 
 	// Initialize configs service
 	configsService := configs.NewService(queries)
+
+	// Initialize webhooks service
+	webhooksService := webhooks.NewService(configsService)
 
 	huma.Get(api, "/health", func(ctx context.Context, input *struct{}) (*HealthCheckResponse, error) {
 		resp := &HealthCheckResponse{}
@@ -484,7 +489,15 @@ func NewRouter(queries *db.Queries) *fiber.App {
 			fmt.Printf("Ping event received: %s\n", *event.Zen)
 			return &struct{}{}, nil
 		case *github.PushEvent:
-			fmt.Printf("Push event received: %+v\n", input.HookId)
+			// Handle push event
+			if err := webhooksService.HandlePushEvent(ctx, config, event); err != nil {
+				fmt.Printf("Error handling push event: %v\n", err)
+				// Determine error type and return appropriate HTTP status
+				if strings.Contains(err.Error(), "repository mismatch") || strings.Contains(err.Error(), "Dockerfile not found") {
+					return nil, huma.Error400BadRequest(err.Error())
+				}
+				return nil, huma.Error500InternalServerError("Failed to process push event", err)
+			}
 			return &struct{}{}, nil
 		}
 

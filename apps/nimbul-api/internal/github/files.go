@@ -9,8 +9,14 @@ import (
 )
 
 // FileExists checks if a file exists at the specified path in a GitHub repository
-func FileExists(ctx context.Context, client *github.Client, owner, repo, path string) (bool, error) {
-	_, _, resp, err := client.Repositories.GetContents(ctx, owner, repo, path, nil)
+// If ref is provided, checks at that specific ref (branch, tag, or commit SHA)
+func FileExists(ctx context.Context, client *github.Client, owner, repo, path, ref string) (bool, error) {
+	opts := &github.RepositoryContentGetOptions{}
+	if ref != "" {
+		opts.Ref = ref
+	}
+
+	_, _, resp, err := client.Repositories.GetContents(ctx, owner, repo, path, opts)
 	if err != nil {
 		// Check if error is 404 (file not found)
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
