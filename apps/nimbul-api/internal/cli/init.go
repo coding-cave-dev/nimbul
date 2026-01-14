@@ -11,10 +11,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/coding-cave-dev/nimbul/internal/github"
 	"github.com/coding-cave-dev/nimbul/internal/sdk"
-	"github.com/google/go-github/v81/github"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
 )
 
 var initCmd = &cobra.Command{
@@ -52,12 +51,7 @@ type gitRepo struct {
 	url   string
 }
 
-type githubRepo struct {
-	Owner    string
-	Name     string
-	FullName string
-	CloneURL string
-}
+type githubRepo = github.Repository
 
 type providersLoadedMsg struct {
 	providers []string
@@ -84,6 +78,12 @@ type confirmRepoMsg struct {
 
 type dockerfileSubmittedMsg struct {
 	path string
+}
+
+type dockerfileValidatedMsg struct {
+	path   string
+	exists bool
+	err    error
 }
 
 func initExec(cmd *cobra.Command, args []string) error {
@@ -269,34 +269,78 @@ func (m initModel) loadGitHubRepos() tea.Msg {
 		return githubReposLoadedMsg{err: fmt.Errorf("empty token response")}
 	}
 
-	// Use go-github library to list repos
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: tokenResp.JSON200.Token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	ghClient := github.NewClient(tc)
-
-	repos, _, err := ghClient.Repositories.List(ctx, "", &github.RepositoryListOptions{
-		Type:        "all",
-		Sort:        "updated",
-		Direction:   "desc",
-		ListOptions: github.ListOptions{PerPage: 100},
-	})
+	// Use GitHub package to list repos
+	ghClient := github.NewClient(ctx, tokenResp.JSON200.Token)
+	repos, err := github.ListRepositories(ctx, ghClient, 100)
 	if err != nil {
-		return githubReposLoadedMsg{err: fmt.Errorf("failed to list GitHub repos: %w", err)}
+		return githubReposLoadedMsg{err: err}
 	}
 
-	githubRepos := make([]githubRepo, 0, len(repos))
-	for _, repo := range repos {
-		githubRepos = append(githubRepos, githubRepo{
-			Owner:    repo.GetOwner().GetLogin(),
-			Name:     repo.GetName(),
-			FullName: repo.GetFullName(),
-			CloneURL: repo.GetCloneURL(),
-		})
-	}
+	return githubReposLoadedMsg{repos: repos}
+}
 
-	return githubReposLoadedMsg{repos: githubRepos}
+func (m initModel) validateDockerfile() tea.Cmd {
+	return func() tea.Msg {
+		// Get GitHub token from API using SDK
+		ctx := context.Background()
+		authHeader := fmt.Sprintf("Bearer %s", m.state.authToken)
+		params := &sdk.GetCredentialsGithubTokenParams{
+			Authorization: &authHeader,
+		}
+
+		tokenResp, err := m.client.GetCredentialsGithubTokenWithResponse(ctx, params)
+		if err != nil {
+			return dockerfileValidatedMsg{
+				path:   m.state.dockerfilePath,
+				exists: false,
+				err:    fmt.Errorf("failed to get GitHub token: %w", err),
+			}
+		}
+
+		if tokenResp.StatusCode() != 200 {
+			var errMsg string
+			if tokenResp.ApplicationproblemJSONDefault != nil {
+				if tokenResp.ApplicationproblemJSONDefault.Detail != nil {
+					errMsg = *tokenResp.ApplicationproblemJSONDefault.Detail
+				} else if tokenResp.ApplicationproblemJSONDefault.Title != nil {
+					errMsg = *tokenResp.ApplicationproblemJSONDefault.Title
+				}
+			}
+			if errMsg == "" {
+				errMsg = fmt.Sprintf("status %d", tokenResp.StatusCode())
+			}
+			return dockerfileValidatedMsg{
+				path:   m.state.dockerfilePath,
+				exists: false,
+				err:    fmt.Errorf("failed to get GitHub token: %s", errMsg),
+			}
+		}
+
+		if tokenResp.JSON200 == nil {
+			return dockerfileValidatedMsg{
+				path:   m.state.dockerfilePath,
+				exists: false,
+				err:    fmt.Errorf("empty token response"),
+			}
+		}
+
+		// Use GitHub package to check if file exists
+		ghClient := github.NewClient(ctx, tokenResp.JSON200.Token)
+		exists, err := github.FileExists(ctx, ghClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, m.state.dockerfilePath)
+		if err != nil {
+			return dockerfileValidatedMsg{
+				path:   m.state.dockerfilePath,
+				exists: false,
+				err:    err,
+			}
+		}
+
+		return dockerfileValidatedMsg{
+			path:   m.state.dockerfilePath,
+			exists: exists,
+			err:    nil,
+		}
+	}
 }
 
 func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -377,6 +421,18 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dockerfileSubmittedMsg:
 		m.state.dockerfilePath = msg.path
+		return m, m.validateDockerfile()
+
+	case dockerfileValidatedMsg:
+		if msg.err != nil {
+			m.state.err = fmt.Errorf("failed to validate Dockerfile: %w", msg.err)
+			return m, tea.Quit
+		}
+		if !msg.exists {
+			m.state.err = fmt.Errorf("Dockerfile not found at path: %s", msg.path)
+			return m, tea.Quit
+		}
+		// File exists, proceed with config creation
 		return m, m.createConfig()
 
 	case configCreatedMsg:
@@ -593,13 +649,13 @@ func (m initModel) setupWebhook() tea.Cmd {
 		}
 
 		// Get installation ID using user token
-		installationID, err := GetUserInstallationID(ctx, tokenResp.JSON200.Token)
+		installationID, err := github.GetUserInstallationID(ctx, tokenResp.JSON200.Token)
 		if err != nil {
 			return webhookSetupMsg{err: fmt.Errorf("failed to get installation ID: %w", err)}
 		}
 
 		// Create GitHub app auth with installation ID
-		appAuth, err := NewGitHubAppAuth(installationID)
+		appAuth, err := github.NewAppAuth(installationID)
 		if err != nil {
 			return webhookSetupMsg{err: fmt.Errorf("failed to create app auth: %w", err)}
 		}
@@ -615,20 +671,9 @@ func (m initModel) setupWebhook() tea.Cmd {
 		webhookURL := fmt.Sprintf("%s/webhooks/github/%s", apiBaseURL, m.state.configID)
 
 		// Setup webhook via GitHub API using app installation auth
-		hook := &github.Hook{
-			Name:   github.String("web"),
-			Active: github.Bool(true),
-			Events: []string{"push"},
-			Config: &github.HookConfig{
-				URL:         github.String(webhookURL),
-				ContentType: github.String("json"),
-				Secret:      github.String(m.state.webhookSecret),
-			},
-		}
-
-		createdHook, _, err := installClient.Repositories.CreateHook(ctx, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, hook)
+		webhookID, err := github.CreateWebhook(ctx, installClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, webhookURL, m.state.webhookSecret)
 		if err != nil {
-			return webhookSetupMsg{err: fmt.Errorf("failed to create webhook: %w", err)}
+			return webhookSetupMsg{err: err}
 		}
 
 		// Update config with webhook ID using SDK
@@ -636,7 +681,7 @@ func (m initModel) setupWebhook() tea.Cmd {
 			Authorization: &authHeader,
 		}
 		updateBody := sdk.UpdateConfigWebhookRequestBody{
-			WebhookId: createdHook.GetID(),
+			WebhookId: webhookID,
 		}
 		updateResp, err := m.client.PatchConfigsByIdWebhookWithResponse(ctx, m.state.configID, updateParams, updateBody)
 		if err != nil {
@@ -657,7 +702,7 @@ func (m initModel) setupWebhook() tea.Cmd {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to update webhook ID: %s\n", errMsg)
 		}
 
-		return webhookSetupMsg{webhookID: createdHook.GetID()}
+		return webhookSetupMsg{webhookID: webhookID}
 	}
 }
 

@@ -1,4 +1,4 @@
-package cli
+package github
 
 import (
 	"context"
@@ -14,15 +14,15 @@ import (
 	"github.com/google/go-github/v81/github"
 )
 
-// GitHubAppAuth provides authentication for GitHub App installations
-type GitHubAppAuth struct {
+// AppAuth provides authentication for GitHub App installations
+type AppAuth struct {
 	appID          int64
 	privateKey     *rsa.PrivateKey
 	installationID int64
 }
 
-// NewGitHubAppAuth creates a new GitHubAppAuth instance from environment variables
-func NewGitHubAppAuth(installationID int64) (*GitHubAppAuth, error) {
+// NewAppAuth creates a new AppAuth instance from environment variables
+func NewAppAuth(installationID int64) (*AppAuth, error) {
 	// Get app credentials from environment
 	appIDStr := os.Getenv("GITHUB_APP_ID")
 	if appIDStr == "" {
@@ -59,7 +59,7 @@ func NewGitHubAppAuth(installationID int64) (*GitHubAppAuth, error) {
 		}
 	}
 
-	return &GitHubAppAuth{
+	return &AppAuth{
 		appID:          appID,
 		privateKey:     privateKey,
 		installationID: installationID,
@@ -67,16 +67,16 @@ func NewGitHubAppAuth(installationID int64) (*GitHubAppAuth, error) {
 }
 
 // GetInstallationToken generates a JWT and exchanges it for an installation token
-func (g *GitHubAppAuth) GetInstallationToken(ctx context.Context) (string, error) {
+func (a *AppAuth) GetInstallationToken(ctx context.Context) (string, error) {
 	// Generate JWT for app authentication
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iat": now.Add(-60 * time.Second).Unix(), // Issued at time (60 seconds ago to account for clock skew)
 		"exp": now.Add(10 * time.Minute).Unix(),  // Expires in 10 minutes
-		"iss": g.appID,                           // Issuer (App ID)
+		"iss": a.appID,                           // Issuer (App ID)
 	})
 
-	jwtToken, err := token.SignedString(g.privateKey)
+	jwtToken, err := token.SignedString(a.privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign JWT: %w", err)
 	}
@@ -85,7 +85,7 @@ func (g *GitHubAppAuth) GetInstallationToken(ctx context.Context) (string, error
 	appClient := github.NewClient(nil).WithAuthToken(jwtToken)
 
 	// Get installation token
-	installationToken, _, err := appClient.Apps.CreateInstallationToken(ctx, g.installationID, &github.InstallationTokenOptions{})
+	installationToken, _, err := appClient.Apps.CreateInstallationToken(ctx, a.installationID, &github.InstallationTokenOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to create installation token: %w", err)
 	}
@@ -94,8 +94,8 @@ func (g *GitHubAppAuth) GetInstallationToken(ctx context.Context) (string, error
 }
 
 // GetInstallationClient creates a GitHub client authenticated with the installation token
-func (g *GitHubAppAuth) GetInstallationClient(ctx context.Context) (*github.Client, error) {
-	token, err := g.GetInstallationToken(ctx)
+func (a *AppAuth) GetInstallationClient(ctx context.Context) (*github.Client, error) {
+	token, err := a.GetInstallationToken(ctx)
 	if err != nil {
 		return nil, err
 	}

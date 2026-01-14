@@ -3,21 +3,19 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coding-cave-dev/nimbul/internal/github"
 	"github.com/coding-cave-dev/nimbul/internal/sdk"
-	"github.com/google/go-github/v81/github"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	oauth2github "golang.org/x/oauth2/github"
 )
 
 type deviceAuthResponse struct {
 	Device *oauth2.DeviceAuthResponse
-	config *oauth2.Config
+	config *github.OAuthConfig
 	ctx    context.Context
 }
 
@@ -166,40 +164,27 @@ func (m connectGithubModal) Init() tea.Cmd {
 }
 
 func (m connectGithubModal) startOauthFlow() tea.Msg {
-	clientID := os.Getenv("GITHUB_CLIENT_ID")
-	if clientID == "" {
-		panic("GITHUB_CLIENT_ID is not set")
+	config, err := github.NewOAuthConfig()
+	if err != nil {
+		panic(err)
 	}
 
-	config := &oauth2.Config{
-		ClientID: clientID,
-		Scopes:   []string{"admin:repo_hook", "repo"},
-		Endpoint: oauth2.Endpoint{
-			AuthURL:       oauth2github.Endpoint.AuthURL,
-			TokenURL:      oauth2github.Endpoint.TokenURL,
-			DeviceAuthURL: oauth2github.Endpoint.DeviceAuthURL,
-		},
-	}
 	ctx := context.Background()
-
-	device, err := config.DeviceAuth(ctx)
+	device, err := config.StartDeviceAuth(ctx)
 	if err != nil {
 		fmt.Printf("error getting device code: %v\n", err)
 		panic(err)
 	}
 
-	deviceAuthResponse := deviceAuthResponse{
+	return deviceAuthResponse{
 		Device: device,
 		config: config,
 		ctx:    ctx,
 	}
-
-	return deviceAuthResponse
 }
 
 func (m connectGithubModal) pollForToken() tea.Msg {
-	fmt.Printf("polling for token with scopes: %v\n", m.deviceAuthResponse.config.Scopes)
-	token, err := m.deviceAuthResponse.config.DeviceAccessToken(m.deviceAuthResponse.ctx, m.deviceAuthResponse.Device)
+	token, err := m.deviceAuthResponse.config.PollForToken(m.deviceAuthResponse.ctx, m.deviceAuthResponse.Device)
 	if err != nil {
 		fmt.Printf("error exchanging device code: %v\n", err)
 		panic(err)
@@ -210,88 +195,49 @@ func (m connectGithubModal) pollForToken() tea.Msg {
 
 func (m connectGithubModal) testGitHubAPI() tea.Msg {
 	ctx := context.Background()
-	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+	ghClient := github.NewClientWithToken(m.token.AccessToken)
 
-	repos, _, err := ghClient.Repositories.ListByAuthenticatedUser(ctx, &github.RepositoryListByAuthenticatedUserOptions{
-		Type:        "all",
-		Sort:        "updated",
-		Direction:   "desc",
-		ListOptions: github.ListOptions{PerPage: 5}, // Just test with first 5 repos
-	})
+	repos, err := github.ListRepositoriesByAuthenticatedUser(ctx, ghClient, 5)
 	if err != nil {
-		return githubTestResultMsg{err: fmt.Errorf("failed to list repos: %w", err)}
+		return githubTestResultMsg{err: err}
 	}
 
-	repoNames := make([]string, 0, len(repos))
-	for _, repo := range repos {
-		repoNames = append(repoNames, repo.GetFullName())
-	}
-
-	return githubTestResultMsg{repos: repoNames}
+	return githubTestResultMsg{repos: repos}
 }
 
 func (m connectGithubModal) checkAppInstallation() tea.Msg {
 	ctx := context.Background()
-	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+	ghClient := github.NewClientWithToken(m.token.AccessToken)
 
-	// Get user's app installations
-	installations, _, err := ghClient.Apps.ListUserInstallations(ctx, nil)
+	info, err := github.CheckAppInstallation(ctx, ghClient, github.DefaultAppSlug)
 	if err != nil {
 		return appInstallationCheckMsg{
 			installed: false,
-			err:       fmt.Errorf("failed to check app installations: %w", err),
-		}
-	}
-
-	// Check if nimbul-coding-cave app is installed
-	appSlug := "nimbul-coding-cave"
-	installed := false
-	var installationID int64
-	installURL := fmt.Sprintf("https://github.com/apps/%s/installations/new", appSlug)
-
-	for _, installation := range installations {
-		if installation.GetAppSlug() == appSlug {
-			installed = true
-			installationID = installation.GetID()
-			break
+			err:       err,
 		}
 	}
 
 	return appInstallationCheckMsg{
-		installed:      installed,
-		installURL:     installURL,
-		installationID: installationID,
+		installed:      info.Installed,
+		installURL:     info.InstallURL,
+		installationID: info.InstallationID,
 	}
 }
 
 func (m connectGithubModal) verifyAppInstallation() tea.Msg {
 	ctx := context.Background()
-	ghClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
+	ghClient := github.NewClientWithToken(m.token.AccessToken)
 
-	// Get user's app installations again
-	installations, _, err := ghClient.Apps.ListUserInstallations(ctx, nil)
+	installationID, err := github.VerifyAppInstallation(ctx, ghClient, github.DefaultAppSlug)
 	if err != nil {
 		return appInstallationVerifiedMsg{
 			installed: false,
-			err:       fmt.Errorf("failed to verify app installation: %w", err),
-		}
-	}
-
-	// Check if nimbul-coding-cave app is installed
-	appSlug := "nimbul-coding-cave"
-	installed := false
-	var installationID int64
-
-	for _, installation := range installations {
-		if installation.GetAppSlug() == appSlug {
-			installed = true
-			installationID = installation.GetID()
-			break
+			err:       err,
 		}
 	}
 
 	return appInstallationVerifiedMsg{
-		installed:      installed,
+		installed:      true,
 		installationID: installationID,
 	}
 }
@@ -300,7 +246,7 @@ func (m connectGithubModal) testAppInstallationAuth() tea.Msg {
 	ctx := context.Background()
 
 	// Use shared GitHub app auth utility
-	appAuth, err := NewGitHubAppAuth(m.installationID)
+	appAuth, err := github.NewAppAuth(m.installationID)
 	if err != nil {
 		return appInstallationAuthTestMsg{
 			success: false,
@@ -317,32 +263,15 @@ func (m connectGithubModal) testAppInstallationAuth() tea.Msg {
 		}
 	}
 
-	// Get user's repos to find one to test webhooks on (using user token)
-	userClient := github.NewClient(nil).WithAuthToken(m.token.AccessToken)
-	repos, _, err := userClient.Repositories.ListByAuthenticatedUser(ctx, &github.RepositoryListByAuthenticatedUserOptions{
-		ListOptions: github.ListOptions{PerPage: 1},
-	})
+	// Get user client for testing
+	userClient := github.NewClientWithToken(m.token.AccessToken)
+
+	// Test installation auth
+	err = github.TestInstallationAuth(ctx, installClient, userClient)
 	if err != nil {
 		return appInstallationAuthTestMsg{
 			success: false,
-			err:     fmt.Errorf("failed to list repos for testing: %w", err),
-		}
-	}
-
-	if len(repos) == 0 {
-		return appInstallationAuthTestMsg{
-			success: false,
-			err:     fmt.Errorf("no repositories found to test webhooks"),
-		}
-	}
-
-	// Try to list webhooks using installation auth
-	testRepo := repos[0]
-	_, _, err = installClient.Repositories.ListHooks(ctx, testRepo.GetOwner().GetLogin(), testRepo.GetName(), nil)
-	if err != nil {
-		return appInstallationAuthTestMsg{
-			success: false,
-			err:     fmt.Errorf("failed to list webhooks with installation auth: %w", err),
+			err:     err,
 		}
 	}
 

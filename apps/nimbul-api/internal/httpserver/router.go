@@ -484,7 +484,7 @@ func NewRouter(queries *db.Queries) *fiber.App {
 			fmt.Printf("Ping event received: %s\n", *event.Zen)
 			return &struct{}{}, nil
 		case *github.PushEvent:
-			fmt.Printf("Push event received: %+v\n", *event)
+			fmt.Printf("Push event received: %+v\n", input.HookId)
 			return &struct{}{}, nil
 		}
 
