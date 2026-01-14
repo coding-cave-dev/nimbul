@@ -8,6 +8,7 @@ build:
     tags:
       - ghcr.io/coding-cave-dev/nimbul-api:{{ .COMMIT_SHORT }}
 
+
 deploy:
   - name: deploy-nimbul-api
     buildId: build-nimbul-api
