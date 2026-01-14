@@ -106,25 +106,43 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 
 	// Process status updates in background
 	go func() {
+		defer close(statusDone)
+		fmt.Fprintf(os.Stderr, "[BuildKit] Starting to receive status updates...\n")
 		for {
 			select {
 			case status, ok := <-statusCh:
 				if !ok {
-					close(statusDone)
+					fmt.Fprintf(os.Stderr, "[BuildKit] Status channel closed\n")
 					return
 				}
-				// Print build logs
+
+				// Debug: log when we receive status updates
+				if len(status.Vertexes) > 0 || len(status.Logs) > 0 {
+					fmt.Fprintf(os.Stderr, "[BuildKit] Received status: %d vertexes, %d log entries\n",
+						len(status.Vertexes), len(status.Logs))
+				}
+
+				// Print vertex progress
 				for _, vertex := range status.Vertexes {
-					if vertex.Error != "" {
-						fmt.Fprintf(os.Stderr, "ERROR: %s\n", vertex.Error)
+					if vertex.Name != "" {
+						if vertex.Error != "" {
+							fmt.Fprintf(os.Stderr, "[ERROR] %s: %s\n", vertex.Name, vertex.Error)
+						} else if vertex.Completed != nil {
+							fmt.Fprintf(os.Stderr, "[✓] %s\n", vertex.Name)
+						} else if vertex.Started != nil {
+							fmt.Fprintf(os.Stderr, "[*] %s\n", vertex.Name)
+						}
 					}
 				}
+
 				// Print log output
 				for _, log := range status.Logs {
-					fmt.Fprintf(os.Stderr, "%s", log.Data)
+					os.Stderr.Write(log.Data)
 				}
+
+				os.Stderr.Sync()
 			case <-ctx.Done():
-				close(statusDone)
+				fmt.Fprintf(os.Stderr, "[BuildKit] Context cancelled\n")
 				return
 			}
 		}
