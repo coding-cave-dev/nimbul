@@ -1,0 +1,22 @@
+# nimbul.yaml
+version: "1"
+
+build:
+  - name: build-nimbul-api
+    dockerfile: apps/nimbul-api/Dockerfile
+    context: apps/nimbul-api
+    tags:
+      - coding-cave-dev-nimbul-api:latest
+      - coding-cave-dev-nimbul-api:{{ .COMMIT_SHA }}
+
+deploy:
+  - name: deploy-nimbul-api
+    buildId: build-nimbul-api
+    manifests:
+      - path: infra/k8s/nimbul-system/nimbul-api.yaml
+        overrides:
+          - path: spec.template.spec.containers[0].image
+            match:
+              kind: Deployment
+            value: '{{ .BUILD_TAG[1] }}'
+    

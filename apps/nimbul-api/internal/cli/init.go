@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/coding-cave-dev/nimbul/internal/github"
+	"github.com/coding-cave-dev/nimbul/internal/nimbulconfig"
 	"github.com/coding-cave-dev/nimbul/internal/sdk"
 	"github.com/spf13/cobra"
 )
@@ -36,9 +38,7 @@ type initState struct {
 	selectedRepo        *githubRepo
 	repoSelectionCursor int
 	confirmRepoCursor   int // 0 = Yes, 1 = No
-	dockerfileInput     string
-	dockerfileFocused   bool
-	dockerfilePath      string
+	nimbulConfig        *nimbulconfig.NimbulConfig
 	webhookSecret       string
 	configID            string
 	step                string
@@ -76,13 +76,8 @@ type confirmRepoMsg struct {
 	useCurrent bool
 }
 
-type dockerfileSubmittedMsg struct {
-	path string
-}
-
-type dockerfileValidatedMsg struct {
-	path   string
-	exists bool
+type nimbulConfigValidatedMsg struct {
+	config *nimbulconfig.NimbulConfig
 	err    error
 }
 
@@ -279,7 +274,7 @@ func (m initModel) loadGitHubRepos() tea.Msg {
 	return githubReposLoadedMsg{repos: repos}
 }
 
-func (m initModel) validateDockerfile() tea.Cmd {
+func (m initModel) validateNimbulConfig() tea.Cmd {
 	return func() tea.Msg {
 		// Get GitHub token from API using SDK
 		ctx := context.Background()
@@ -290,10 +285,8 @@ func (m initModel) validateDockerfile() tea.Cmd {
 
 		tokenResp, err := m.client.GetCredentialsGithubTokenWithResponse(ctx, params)
 		if err != nil {
-			return dockerfileValidatedMsg{
-				path:   m.state.dockerfilePath,
-				exists: false,
-				err:    fmt.Errorf("failed to get GitHub token: %w", err),
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to get GitHub token: %w", err),
 			}
 		}
 
@@ -309,35 +302,73 @@ func (m initModel) validateDockerfile() tea.Cmd {
 			if errMsg == "" {
 				errMsg = fmt.Sprintf("status %d", tokenResp.StatusCode())
 			}
-			return dockerfileValidatedMsg{
-				path:   m.state.dockerfilePath,
-				exists: false,
-				err:    fmt.Errorf("failed to get GitHub token: %s", errMsg),
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to get GitHub token: %s", errMsg),
 			}
 		}
 
 		if tokenResp.JSON200 == nil {
-			return dockerfileValidatedMsg{
-				path:   m.state.dockerfilePath,
-				exists: false,
-				err:    fmt.Errorf("empty token response"),
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("empty token response"),
 			}
 		}
 
-		// Use GitHub package to check if file exists
+		// Use GitHub package to fetch nimbul.yaml file
 		ghClient := github.NewClient(ctx, tokenResp.JSON200.Token)
-		exists, err := github.FileExists(ctx, ghClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, m.state.dockerfilePath, "")
+
+		// Check if nimbul.yaml exists
+		exists, err := github.FileExists(ctx, ghClient, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, "nimbul.yaml", "")
 		if err != nil {
-			return dockerfileValidatedMsg{
-				path:   m.state.dockerfilePath,
-				exists: false,
-				err:    err,
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to check nimbul.yaml existence: %w", err),
+			}
+		}
+		if !exists {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("nimbul.yaml not found in repository. Please create a nimbul.yaml file in the root of your repository"),
 			}
 		}
 
-		return dockerfileValidatedMsg{
-			path:   m.state.dockerfilePath,
-			exists: exists,
+		// Fetch file contents
+		fileContent, _, _, err := ghClient.Repositories.GetContents(ctx, m.state.selectedRepo.Owner, m.state.selectedRepo.Name, "nimbul.yaml", nil)
+		if err != nil {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to fetch nimbul.yaml: %w", err),
+			}
+		}
+
+		// Decode base64 content
+		content, err := base64.StdEncoding.DecodeString(*fileContent.Content)
+		if err != nil {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to decode nimbul.yaml content: %w", err),
+			}
+		}
+
+		// Parse config
+		config, err := nimbulconfig.ParseBytes(content)
+		if err != nil {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("failed to parse nimbul.yaml: %w", err),
+			}
+		}
+
+		// Validate config
+		if err := nimbulconfig.Validate(config); err != nil {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("invalid nimbul.yaml: %w", err),
+			}
+		}
+
+		// Check that at least one build is defined
+		if len(config.Build) == 0 {
+			return nimbulConfigValidatedMsg{
+				err: fmt.Errorf("nimbul.yaml must define at least one build configuration"),
+			}
+		}
+
+		return nimbulConfigValidatedMsg{
+			config: config,
 			err:    nil,
 		}
 	}
@@ -356,8 +387,6 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleConfirmRepoKeys(msg)
 		case "select_repo":
 			return m.handleRepoSelectionKeys(msg)
-		case "dockerfile":
-			return m.handleDockerfileKeys(msg)
 		}
 
 		return m, nil
@@ -394,10 +423,8 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case repoSelectedMsg:
 		m.state.selectedRepo = msg.repo
-		m.state.step = "dockerfile"
-		m.state.dockerfileInput = "Dockerfile"
-		m.state.dockerfileFocused = true
-		return m, nil
+		m.state.step = "validating"
+		return m, m.validateNimbulConfig()
 
 	case confirmRepoMsg:
 		if msg.useCurrent {
@@ -408,10 +435,8 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				FullName: fmt.Sprintf("%s/%s", m.state.currentRepo.owner, m.state.currentRepo.name),
 				CloneURL: m.state.currentRepo.url,
 			}
-			m.state.step = "dockerfile"
-			m.state.dockerfileInput = "Dockerfile"
-			m.state.dockerfileFocused = true
-			return m, nil
+			m.state.step = "validating"
+			return m, m.validateNimbulConfig()
 		} else {
 			// Load repos for selection
 			return m, func() tea.Msg {
@@ -419,20 +444,13 @@ func (m initModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case dockerfileSubmittedMsg:
-		m.state.dockerfilePath = msg.path
-		return m, m.validateDockerfile()
-
-	case dockerfileValidatedMsg:
+	case nimbulConfigValidatedMsg:
 		if msg.err != nil {
-			m.state.err = fmt.Errorf("failed to validate Dockerfile: %w", msg.err)
+			m.state.err = fmt.Errorf("failed to validate nimbul.yaml: %w", msg.err)
 			return m, tea.Quit
 		}
-		if !msg.exists {
-			m.state.err = fmt.Errorf("Dockerfile not found at path: %s", msg.path)
-			return m, tea.Quit
-		}
-		// File exists, proceed with config creation
+		// Config is valid, store it and proceed with config creation
+		m.state.nimbulConfig = msg.config
 		return m, m.createConfig()
 
 	case configCreatedMsg:
@@ -523,31 +541,6 @@ func (m initModel) handleRepoSelectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func (m initModel) handleDockerfileKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if !m.state.dockerfileFocused {
-		return m, nil
-	}
-
-	switch msg.Type {
-	case tea.KeyEnter:
-		if m.state.dockerfileInput == "" {
-			m.state.dockerfileInput = "Dockerfile"
-		}
-		return m, func() tea.Msg {
-			return dockerfileSubmittedMsg{path: m.state.dockerfileInput}
-		}
-	case tea.KeyBackspace:
-		if len(m.state.dockerfileInput) > 0 {
-			m.state.dockerfileInput = m.state.dockerfileInput[:len(m.state.dockerfileInput)-1]
-		}
-		return m, nil
-	case tea.KeyRunes:
-		m.state.dockerfileInput += string(msg.Runes)
-		return m, nil
-	}
-	return m, nil
-}
-
 type configCreatedMsg struct {
 	configID      string
 	webhookSecret string
@@ -563,6 +556,14 @@ func (m initModel) createConfig() tea.Cmd {
 		}
 		webhookSecret := hex.EncodeToString(secretBytes)
 
+		// Extract DockerfilePath from first build config for backward compatibility
+		var dockerfilePath string
+		if m.state.nimbulConfig != nil && len(m.state.nimbulConfig.Build) > 0 {
+			dockerfilePath = m.state.nimbulConfig.Build[0].Dockerfile
+		} else {
+			return configCreatedMsg{err: fmt.Errorf("no build configuration found in nimbul.yaml")}
+		}
+
 		ctx := context.Background()
 		authHeader := fmt.Sprintf("Bearer %s", m.state.authToken)
 		params := &sdk.PostConfigsParams{
@@ -575,7 +576,7 @@ func (m initModel) createConfig() tea.Cmd {
 			RepoName:       m.state.selectedRepo.Name,
 			RepoFullName:   m.state.selectedRepo.FullName,
 			RepoCloneUrl:   m.state.selectedRepo.CloneURL,
-			DockerfilePath: m.state.dockerfilePath,
+			DockerfilePath: dockerfilePath,
 			WebhookSecret:  webhookSecret,
 		}
 
@@ -778,27 +779,10 @@ func (m initModel) View() string {
 		s.WriteString("\n")
 		s.WriteString(lipgloss.NewStyle().Foreground(lightGray).Render("Use ↑↓ to navigate, Enter to select"))
 
-	case "dockerfile":
-		s.WriteString(titleStyle.Render("Dockerfile Path\n\n"))
+	case "validating":
+		s.WriteString(titleStyle.Render("Validating Configuration\n\n"))
 		s.WriteString(fmt.Sprintf("Repository: %s\n\n", m.state.selectedRepo.FullName))
-		s.WriteString(labelStyle.Render("Dockerfile path:"))
-		s.WriteString("\n")
-
-		if m.state.dockerfileFocused {
-			if m.state.dockerfileInput == "" {
-				s.WriteString(inputFocusedStyle.Render("Dockerfile█"))
-			} else {
-				s.WriteString(inputFocusedStyle.Render(m.state.dockerfileInput + "█"))
-			}
-		} else {
-			if m.state.dockerfileInput == "" {
-				s.WriteString(inputStyle.Render("Dockerfile"))
-			} else {
-				s.WriteString(inputStyle.Render(m.state.dockerfileInput))
-			}
-		}
-		s.WriteString("\n\n")
-		s.WriteString(lipgloss.NewStyle().Foreground(lightGray).Render("Enter path to Dockerfile, then press Enter"))
+		s.WriteString(loadingStyle.Render("Validating nimbul.yaml...\n"))
 
 	case "complete":
 		s.WriteString(successStyle.Render("✓ Nimbul initialized successfully!\n\n"))
