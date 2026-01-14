@@ -53,7 +53,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		return fmt.Errorf("session: %w", err)
 	}
 
-	// Add filesync provider for local directories (sending context TO daemon)
+	// Add filesync provider for local directories
 	contextFS, err := fsutil.NewFS(req.ContextDir)
 	if err != nil {
 		return fmt.Errorf("failed to create context fs: %w", err)
@@ -89,28 +89,60 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		frontendAttrs["filename"] = req.Dockerfile
 	}
 
-	// Configure exports - use "image" type which pushes to registry
-	// This avoids needing to receive data back from BuildKit
+	// Configure exports
 	exports := []bkclient.ExportEntry{
 		{
 			Type: "image",
 			Attrs: map[string]string{
 				"name": req.ImageRef,
-				"push": "true",
+				"push": fmt.Sprintf("%t", req.Push),
 			},
 		},
 	}
 
-	// Use Solve for standard Dockerfile builds
+	// Solve with status channel for build logs
+	statusCh := make(chan *bkclient.SolveStatus)
+	statusDone := make(chan struct{})
+
+	// Process status updates in background
+	go func() {
+		for {
+			select {
+			case status, ok := <-statusCh:
+				if !ok {
+					close(statusDone)
+					return
+				}
+				// Print build logs
+				for _, vertex := range status.Vertexes {
+					if vertex.Error != "" {
+						fmt.Fprintf(os.Stderr, "ERROR: %s\n", vertex.Error)
+					}
+				}
+				// Print log output
+				for _, log := range status.Logs {
+					fmt.Fprintf(os.Stderr, "%s", log.Data)
+				}
+			case <-ctx.Done():
+				close(statusDone)
+				return
+			}
+		}
+	}()
+
+	// Use Solve with status channel
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
 		Exports:       exports,
 		SharedSession: sess,
-	}, nil)
+	}, statusCh)
 	if err != nil {
 		return fmt.Errorf("solve: %w", err)
 	}
+
+	// Wait for status processing to complete
+	<-statusDone
 
 	return nil
 }

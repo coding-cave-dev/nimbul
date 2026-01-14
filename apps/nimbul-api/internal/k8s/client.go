@@ -2,7 +2,6 @@ package k8s
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -30,11 +29,8 @@ func getConfig() (*rest.Config, error) {
 		return config, nil
 	}
 
-	kubeconfig := flag.String("kubeconfig", kubeConfigPath, "path to the kubeconfig file")
-	flag.Parse()
-
-	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	// Use the kubeconfig path directly - no need for flags
+	config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
 	if err != nil {
 		return nil, err
 	}
