@@ -10,7 +10,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/session/filesync"
 	"github.com/tonistiigi/fsutil"
 )
 
@@ -80,13 +79,7 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 				},
 			},
 		},
-		Session: []session.Attachable{
-			auth,
-			filesync.NewFSSyncProvider(filesync.StaticDirSource{
-				"context":    contextFS,
-				"dockerfile": contextFS,
-			}),
-		},
+		Session: []session.Attachable{auth},
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("solve: %w", err)
