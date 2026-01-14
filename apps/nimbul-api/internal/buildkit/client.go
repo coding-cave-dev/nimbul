@@ -10,7 +10,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/tonistiigi/fsutil"
 )
 
 type Builder struct {
@@ -51,12 +50,6 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 		ConfigFile: configfile,
 	})
 
-	// Filesync provider for local directories
-	contextFS, err := fsutil.NewFS(req.ContextDir)
-	if err != nil {
-		return fmt.Errorf("failed to create context fs: %w", err)
-	}
-
 	// Set Dockerfile path in frontend attrs if specified
 	frontendAttrs := map[string]string{}
 	if req.Dockerfile != "" && req.Dockerfile != "Dockerfile" {
@@ -67,9 +60,9 @@ func (b *Builder) BuildAndPush(ctx context.Context, req BuildRequest) error {
 	_, err = c.Solve(ctx, nil, bkclient.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalMounts: map[string]fsutil.FS{
-			"context":    contextFS,
-			"dockerfile": contextFS,
+		LocalDirs: map[string]string{
+			"context":    req.ContextDir,
+			"dockerfile": req.ContextDir,
 		},
 		Exports: []bkclient.ExportEntry{
 			{
