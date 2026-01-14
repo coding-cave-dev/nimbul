@@ -113,6 +113,7 @@ func (s *Service) HandlePushEvent(ctx context.Context, config *configs.Config, p
 				ContextDir: buildContext,
 				Dockerfile: dockerfileRelPath,
 				ImageRef:   imageRef,
+				Push:       true,
 			}
 
 			if err := builder.BuildAndPush(ctx, buildReq); err != nil {
